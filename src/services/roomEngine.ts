@@ -44,10 +44,14 @@ const PEER_PREFIX = 'khabri-v1-';
 
 const PEER_CONFIG = {
   debug: 0,
+  pingInterval: 5000,
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
     ],
   },
 };
@@ -115,6 +119,7 @@ export class HostRoomController {
   private destroyed = false;
   private callbacks: SessionCallbacks;
   private idRetries = 0;
+  private peerRetryTimer: number | null = null;
 
   constructor(
     options: {
@@ -138,16 +143,18 @@ export class HostRoomController {
         imposterCount: snap.settings?.imposterCount === 2 ? 2 : 1,
       };
       for (const p of snap.players) {
-        this.players.set(p.id, {
-          id: p.id,
+        const isCreator = p.id === snap.hostPlayerId || p.id === options.hostId || p.isHost;
+        const resolvedId = isCreator ? options.hostId : p.id;
+        this.players.set(resolvedId, {
+          id: resolvedId,
           name: p.name,
           avatarColor: p.avatarColor,
-          connected: p.id === options.hostId,
+          connected: isCreator,
           score: p.score,
           roundsWon: p.roundsWon,
           roundsPlayed: p.roundsPlayed,
           inCurrentRound: false,
-          transport: p.id === options.hostId ? 'local' : 'peer',
+          transport: isCreator ? 'local' : 'peer',
           peerConn: null,
         });
       }
@@ -181,6 +188,13 @@ export class HostRoomController {
     });
   }
 
+  private clearPeerRetryTimer(): void {
+    if (this.peerRetryTimer !== null) {
+      window.clearTimeout(this.peerRetryTimer);
+      this.peerRetryTimer = null;
+    }
+  }
+
   private initTransports(): void {
     this.setupBroadcastChannel();
     this.setupPeer();
@@ -204,6 +218,7 @@ export class HostRoomController {
   }
 
   private setupPeer(): void {
+    this.clearPeerRetryTimer();
     if (this.peer) {
       try {
         this.peer.destroy();
@@ -218,7 +233,7 @@ export class HostRoomController {
     this.peer = peer;
 
     peer.on('open', () => {
-      if (this.destroyed) return;
+      if (this.destroyed || this.peer !== peer) return;
       this.callbacks.onStatus('connected');
       this.broadcastAll();
     });
@@ -262,7 +277,7 @@ export class HostRoomController {
     });
 
     peer.on('error', (err) => {
-      if (this.destroyed) return;
+      if (this.destroyed || this.peer !== peer) return;
       if (err.type === 'unavailable-id' && this.idRetries < 5 && this.players.size <= 1) {
         this.idRetries += 1;
         this.code = generateRoomCode();
@@ -272,17 +287,49 @@ export class HostRoomController {
         this.broadcastAll();
         return;
       }
-      this.callbacks.onStatus('connected');
+
+      // Recover from transient signaling/network failures automatically
+      if (
+        err.type === 'network' ||
+        err.type === 'server-error' ||
+        err.type === 'socket-error' ||
+        err.type === 'socket-closed' ||
+        err.type === 'disconnected'
+      ) {
+        this.callbacks.onStatus('reconnecting');
+        this.clearPeerRetryTimer();
+        this.peerRetryTimer = window.setTimeout(() => {
+          if (!this.destroyed) this.reconnectIfDropped();
+        }, 2500);
+      }
     });
 
     peer.on('disconnected', () => {
-      if (this.destroyed || !this.peer || this.peer.destroyed) return;
+      if (this.destroyed || this.peer !== peer || peer.destroyed) return;
+      try {
+        peer.reconnect();
+      } catch {
+        this.clearPeerRetryTimer();
+        this.peerRetryTimer = window.setTimeout(() => {
+          if (!this.destroyed) this.setupPeer();
+        }, 2500);
+      }
+    });
+  }
+
+  public reconnectIfDropped(): void {
+    if (this.destroyed) return;
+    if (!this.peer || this.peer.destroyed) {
+      this.setupPeer();
+      return;
+    }
+    if (this.peer.disconnected) {
       try {
         this.peer.reconnect();
       } catch {
-        // Ignore reconnect error
+        this.setupPeer();
       }
-    });
+    }
   }
 
   public sendHostAction(msg: ClientMessage): void {
@@ -299,11 +346,19 @@ export class HostRoomController {
       return;
     }
 
-    if (player.transport === 'peer' && player.peerConn && player.peerConn.open) {
-      try {
-        player.peerConn.send(message);
-      } catch {
-        // Ignore dropped frame
+    if (player.transport === 'peer' && player.peerConn) {
+      const conn = player.peerConn;
+      const trySend = () => {
+        try {
+          conn.send(message);
+        } catch {
+          // Ignore dropped frame
+        }
+      };
+      if (conn.open) {
+        trySend();
+      } else {
+        conn.once('open', trySend);
       }
     } else if (player.transport === 'bc' && this.bc) {
       const env: BroadcastEnvelope = { dir: 'h2c', targetId: player.id, payload: message };
@@ -320,8 +375,18 @@ export class HostRoomController {
     const payload: ServerMessage = { type: 'room:error', message };
     if (transport === 'local') {
       this.callbacks.onError(message);
-    } else if (transport === 'peer' && conn && conn.open) {
-      conn.send(payload);
+    } else if (transport === 'peer' && conn) {
+      if (conn.open) {
+        conn.send(payload);
+      } else {
+        conn.once('open', () => {
+          try {
+            conn.send(payload);
+          } catch {
+            // Ignore
+          }
+        });
+      }
     } else if (transport === 'bc' && this.bc) {
       this.bc.postMessage({ dir: 'h2c', targetId: senderId, payload } satisfies BroadcastEnvelope);
     }
@@ -445,6 +510,27 @@ export class HostRoomController {
     return false;
   }
 
+  private migrateDisconnectedPlayerId(oldId: string, newId: string): void {
+    if (!this.activeRound) return;
+    if (this.activeRound.imposterIds.has(oldId)) {
+      this.activeRound.imposterIds.delete(oldId);
+      this.activeRound.imposterIds.add(newId);
+    }
+    if (this.activeRound.startingPlayerId === oldId) {
+      this.activeRound.startingPlayerId = newId;
+    }
+    if (this.activeRound.votes.has(oldId)) {
+      const target = this.activeRound.votes.get(oldId)!;
+      this.activeRound.votes.delete(oldId);
+      this.activeRound.votes.set(newId, target);
+    }
+    for (const [voterId, targetId] of this.activeRound.votes.entries()) {
+      if (targetId === oldId) {
+        this.activeRound.votes.set(voterId, newId);
+      }
+    }
+  }
+
   private handleClientMessage(
     senderId: string,
     msg: ClientMessage,
@@ -458,6 +544,17 @@ export class HostRoomController {
     }
 
     if (msg.type === 'room:join') {
+      // Defensive guard: a remote tab/device must never overwrite the local room creator's player record
+      if (transport !== 'local' && senderId === this.creatorId) {
+        this.sendErrorDirect(
+          senderId,
+          transport,
+          conn,
+          'You are already hosting this room in another tab. Refresh this tab to join as a separate player.',
+        );
+        return;
+      }
+
       const cleanName = String(msg.playerName || '').trim().replace(/\s+/g, ' ').slice(0, 22);
       if (!cleanName) {
         this.sendErrorDirect(senderId, transport, conn, 'Enter your name before joining.');
@@ -467,13 +564,31 @@ export class HostRoomController {
       const duplicate = Array.from(this.players.values()).find(
         (p) => p.id !== senderId && p.name.toLowerCase() === cleanName.toLowerCase(),
       );
+
       if (duplicate) {
-        this.sendErrorDirect(
-          senderId,
+        // If that name belongs to a currently connected player (or the creator), reject duplicate
+        if (duplicate.connected || duplicate.id === this.creatorId) {
+          this.sendErrorDirect(
+            senderId,
+            transport,
+            conn,
+            `"${cleanName}" is already in this room. Pick a slightly different name.`,
+          );
+          return;
+        }
+        // Seamless reclaim when a disconnected guest reopens the link/QR in a fresh mobile browser tab
+        this.players.delete(duplicate.id);
+        this.migrateDisconnectedPlayerId(duplicate.id, senderId);
+        this.players.set(senderId, {
+          ...duplicate,
+          id: senderId,
+          name: cleanName,
+          connected: true,
           transport,
-          conn,
-          `"${cleanName}" is already in this room. Pick a slightly different name.`,
-        );
+          peerConn: conn,
+        });
+        this.persistSnapshot();
+        this.broadcastAll(true);
         return;
       }
 
@@ -758,6 +873,7 @@ export class HostRoomController {
 
   public destroy(clearSnapshot = true): void {
     this.destroyed = true;
+    this.clearPeerRetryTimer();
     if (clearSnapshot) {
       saveHostRoomSnapshot(null);
     }
@@ -777,8 +893,8 @@ export class HostRoomController {
 }
 
 /**
- * Guest Room Client connecting directly to the room creator's device via PeerJS WebRTC
- * (with instant BroadcastChannel fast-path for same-browser tabs).
+ * Guest Room Client connecting directly to the room creator's device via PeerJS WebRTC (JSON serialization)
+ * with instant BroadcastChannel fast-path for same-browser tabs and automatic retries.
  */
 export class GuestRoomClient {
   private roomCode: string;
@@ -790,9 +906,12 @@ export class GuestRoomClient {
   private conn: DataConnection | null = null;
   private bc: BroadcastChannel | null = null;
   private activeTransport: 'none' | 'peer' | 'bc' = 'none';
+  private hasReceivedState = false;
   private destroyed = false;
   private connectTimeout: number | null = null;
   private reconnectTimer: number | null = null;
+  private joinRetryInterval: number | null = null;
+  private peerRetryCount = 0;
 
   constructor(roomCode: string, playerId: string, playerName: string, callbacks: SessionCallbacks) {
     this.roomCode = roomCode.trim().toUpperCase();
@@ -813,18 +932,37 @@ export class GuestRoomClient {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.joinRetryInterval !== null) {
+      window.clearInterval(this.joinRetryInterval);
+      this.joinRetryInterval = null;
+    }
+  }
+
+  private buildJoinMsg(): ClientMessage {
+    return {
+      type: 'room:join',
+      roomCode: this.roomCode,
+      playerId: this.playerId,
+      playerName: this.playerName,
+    };
   }
 
   private handleIncoming(msg: ServerMessage): void {
     if (this.destroyed) return;
     if (msg.type === 'room:state') {
+      this.hasReceivedState = true;
+      this.peerRetryCount = 0;
       this.clearTimers();
       this.callbacks.onStatus('connected');
       this.callbacks.onState(msg.state, msg.secret);
     } else if (msg.type === 'room:error') {
       this.clearTimers();
       this.callbacks.onError(msg.message);
-      if (msg.message.includes('already in this room') || msg.message.includes('Room is full')) {
+      if (
+        msg.message.includes('already in this room') ||
+        msg.message.includes('Room is full') ||
+        msg.message.includes('already hosting')
+      ) {
         this.destroy();
         this.callbacks.onStatus('idle');
       }
@@ -838,16 +976,92 @@ export class GuestRoomClient {
     }
   }
 
+  private dialHostPeer(peer: Peer): void {
+    if (this.destroyed || this.activeTransport === 'bc' || peer !== this.peer) return;
+
+    if (this.conn) {
+      try {
+        this.conn.close();
+      } catch {
+        // Ignore
+      }
+      this.conn = null;
+    }
+
+    const joinMsg = this.buildJoinMsg();
+    const conn = peer.connect(`${PEER_PREFIX}${this.roomCode}`, {
+      reliable: true,
+      serialization: 'json',
+    });
+    this.conn = conn;
+
+    conn.on('open', () => {
+      if (this.destroyed || this.activeTransport === 'bc' || conn !== this.conn) {
+        conn.close();
+        return;
+      }
+      this.activeTransport = 'peer';
+      if (this.bc) {
+        this.bc.close();
+        this.bc = null;
+      }
+
+      // Send join immediately and keep resending briefly until first room:state confirms delivery
+      conn.send(joinMsg);
+      if (this.joinRetryInterval !== null) {
+        window.clearInterval(this.joinRetryInterval);
+      }
+      this.joinRetryInterval = window.setInterval(() => {
+        if (this.destroyed || this.hasReceivedState || this.activeTransport !== 'peer' || !conn.open) {
+          if (this.joinRetryInterval !== null) {
+            window.clearInterval(this.joinRetryInterval);
+            this.joinRetryInterval = null;
+          }
+          return;
+        }
+        try {
+          conn.send(joinMsg);
+        } catch {
+          // Ignore
+        }
+      }, 1200);
+    });
+
+    conn.on('data', (raw) => {
+      if (this.destroyed || this.activeTransport !== 'peer') return;
+      this.handleIncoming(raw as ServerMessage);
+    });
+
+    conn.on('close', () => {
+      if (this.destroyed || this.activeTransport !== 'peer' || conn !== this.conn) return;
+      this.activeTransport = 'none';
+      this.hasReceivedState = false;
+      this.callbacks.onStatus('reconnecting');
+      this.reconnectTimer = window.setTimeout(() => {
+        if (!this.destroyed) this.connect();
+      }, 1500);
+    });
+
+    conn.on('error', () => {
+      if (this.destroyed || this.activeTransport === 'bc') return;
+      if (this.hasReceivedState) {
+        this.activeTransport = 'none';
+        this.hasReceivedState = false;
+        this.callbacks.onStatus('reconnecting');
+        this.reconnectTimer = window.setTimeout(() => {
+          if (!this.destroyed) this.connect();
+        }, 1800);
+      }
+    });
+  }
+
   private connect(): void {
     this.clearTimers();
+    this.hasReceivedState = false;
 
-    const joinMsg: ClientMessage = {
-      type: 'room:join',
-      roomCode: this.roomCode,
-      playerId: this.playerId,
-      playerName: this.playerName,
-    };
+    const joinMsg = this.buildJoinMsg();
 
+    // Fast-path for same-browser tabs via BroadcastChannel
     if (typeof BroadcastChannel !== 'undefined') {
       if (this.bc) this.bc.close();
       const channel = new BroadcastChannel(`khabri-bc-${this.roomCode}`);
@@ -886,59 +1100,36 @@ export class GuestRoomClient {
     this.peer = peer;
 
     this.connectTimeout = window.setTimeout(() => {
-      if (this.destroyed || this.activeTransport !== 'none') return;
+      if (this.destroyed || this.hasReceivedState) return;
       this.callbacks.onError(
-        `Could not reach room ${this.roomCode}. Make sure the room screen is still open and check the 4-letter code.`,
+        `Could not join room ${this.roomCode}. Make sure the room screen is open on the creator's device and double-check the 4-character code.`,
       );
       this.destroy();
       this.callbacks.onStatus('idle');
-    }, 10000);
+    }, 18000);
 
     peer.on('open', () => {
-      if (this.destroyed || this.activeTransport === 'bc') return;
-      const conn = peer.connect(`${PEER_PREFIX}${this.roomCode}`, { reliable: true });
-      this.conn = conn;
-
-      conn.on('open', () => {
-        if (this.destroyed || this.activeTransport === 'bc') {
-          conn.close();
-          return;
-        }
-        this.activeTransport = 'peer';
-        if (this.bc) {
-          this.bc.close();
-          this.bc = null;
-        }
-        conn.send(joinMsg);
-      });
-
-      conn.on('data', (raw) => {
-        if (this.destroyed || this.activeTransport !== 'peer') return;
-        this.handleIncoming(raw as ServerMessage);
-      });
-
-      conn.on('close', () => {
-        if (this.destroyed || this.activeTransport !== 'peer') return;
-        this.activeTransport = 'none';
-        this.callbacks.onStatus('reconnecting');
-        this.reconnectTimer = window.setTimeout(() => {
-          if (!this.destroyed) this.connect();
-        }, 1800);
-      });
-
-      conn.on('error', () => {
-        if (this.destroyed || this.activeTransport === 'bc') return;
-        this.callbacks.onError(
-          `Connection to room ${this.roomCode} dropped. Check that the room creator's screen is still open.`,
-        );
-      });
+      if (this.destroyed || this.activeTransport === 'bc' || peer !== this.peer) return;
+      this.dialHostPeer(peer);
     });
 
     peer.on('error', (err) => {
-      if (this.destroyed || this.activeTransport === 'bc') return;
+      if (this.destroyed || this.activeTransport === 'bc' || peer !== this.peer) return;
       if (err.type === 'peer-unavailable') {
+        // Retry a few times in case the host just created the room or is returning from WhatsApp/background
+        if (this.peerRetryCount < 4 && !this.hasReceivedState) {
+          this.peerRetryCount += 1;
+          this.reconnectTimer = window.setTimeout(() => {
+            if (!this.destroyed && this.peer === peer && !this.hasReceivedState) {
+              this.dialHostPeer(peer);
+            }
+          }, 2500);
+          return;
+        }
         this.clearTimers();
-        this.callbacks.onError(`Room ${this.roomCode} was not found. Double-check the 4-letter code.`);
+        this.callbacks.onError(
+          `Room ${this.roomCode} was not found. Make sure the room creator's screen is open and check the 4-character code.`,
+        );
         this.destroy();
         this.callbacks.onStatus('idle');
       }
@@ -958,6 +1149,7 @@ export class GuestRoomClient {
     if (this.destroyed) return;
     if (this.activeTransport === 'peer' && (!this.conn || !this.conn.open)) {
       this.activeTransport = 'none';
+      this.hasReceivedState = false;
       this.callbacks.onStatus('reconnecting');
       this.connect();
     }

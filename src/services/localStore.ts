@@ -31,13 +31,15 @@ export interface PersistedHostSnapshot {
 
 export function getOrCreatePlayerId(): string {
   try {
-    const existing = localStorage.getItem(KEYS.PLAYER_ID);
+    // Use sessionStorage so each browser tab gets a unique player ID (preventing same-browser tab collisions)
+    // while still preserving identity across page reloads in the same tab.
+    const existing = sessionStorage.getItem(KEYS.PLAYER_ID);
     if (existing) return existing;
     const generated =
       typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
         : `p_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem(KEYS.PLAYER_ID, generated);
+    sessionStorage.setItem(KEYS.PLAYER_ID, generated);
     return generated;
   } catch {
     return `p_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;

@@ -146,15 +146,20 @@ export function useGameSocket() {
     }
   }, []);
 
-  // Recover guest connection cleanly when mobile screen wakes from lock/background
+  // Recover host & guest connections cleanly when mobile screen wakes from lock/WhatsApp or network returns
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && guestRef.current) {
-        guestRef.current.reconnectIfDropped();
+    const handleRecover = () => {
+      if (document.visibilityState === 'visible') {
+        hostRef.current?.reconnectIfDropped();
+        guestRef.current?.reconnectIfDropped();
       }
     };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    document.addEventListener('visibilitychange', handleRecover);
+    window.addEventListener('online', handleRecover);
+    return () => {
+      document.removeEventListener('visibilitychange', handleRecover);
+      window.removeEventListener('online', handleRecover);
+    };
   }, []);
 
   // Clean up transports on unmount without wiping host recovery snapshot

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowRight, Users, Sparkles, Vote, Trophy, RotateCcw } from 'lucide-react';
 import type { WordBankStats, WordPack } from '../types/game';
-import { getSavedPlayerName, getSavedRoomCode } from '../hooks/useGameSocket';
+import { getSavedPlayerName } from '../hooks/useGameSocket';
 import type { PersistedHostSnapshot } from '../services/localStore';
 
 interface HomeViewProps {
@@ -29,9 +29,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
 }) => {
   const [mode, setMode] = useState<'create' | 'join'>(initialRoomCode ? 'join' : 'create');
   const [playerName, setPlayerName] = useState<string>(() => getSavedPlayerName());
-  const [roomCode, setRoomCode] = useState<string>(() => initialRoomCode || getSavedRoomCode());
+  const [roomCode, setRoomCode] = useState<string>(() => initialRoomCode);
   const [wordPack, setWordPack] = useState<WordPack>('mixed');
   const [localError, setLocalError] = useState<string | null>(null);
+
+  const handleRoomCodeChange = (raw: string) => {
+    const trimmed = raw.trim();
+    // Support pasting full invite URLs like https://.../?room=K7MP
+    const urlMatch = trimmed.match(/[?&]room=([A-Za-z0-9]{4})/i);
+    if (urlMatch) {
+      setRoomCode(urlMatch[1].toUpperCase());
+      return;
+    }
+    setRoomCode(trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4));
+  };
 
   const displayError = localError || error;
 
@@ -156,13 +167,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <input
                     id="room-code"
                     type="text"
-                    maxLength={4}
                     autoCapitalize="characters"
                     autoCorrect="off"
+                    autoComplete="off"
                     spellCheck={false}
                     placeholder="K7MP"
                     value={roomCode}
-                    onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                    onChange={(e) => handleRoomCodeChange(e.target.value)}
                     className="w-full min-h-[52px] rounded-xl bg-[#0E121A] border border-white/10 px-4 font-mono tabular-nums text-2xl font-bold tracking-[0.25em] text-amber-400 placeholder:text-slate-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 uppercase"
                   />
                 </div>
