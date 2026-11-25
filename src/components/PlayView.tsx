@@ -190,16 +190,16 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onCa
             <div className="flex items-start justify-between gap-4 pb-4 border-b border-white/[0.06]">
               <div>
                 <h2 className="font-display text-xl sm:text-2xl font-bold text-white">
-                  Vote for the Imposter
+                  Vote Anytime — Tap a Player
                 </h2>
                 <p className="text-sm text-slate-400 mt-1">
                   {myVotedPlayer ? (
                     <>
-                      Your vote is on <strong className="text-amber-300">{myVotedPlayer.name}</strong>. Tap another
-                      player to switch before everyone finishes.
+                      You voted for <strong className="text-amber-300">{myVotedPlayer.name}</strong>. You can switch
+                      your vote anytime until the last player votes.
                     </>
                   ) : (
-                    'Tap any player below to cast your vote in one tap.'
+                    'Cast your vote anytime—no need to wait for anyone else to be ready.'
                   )}
                 </p>
               </div>

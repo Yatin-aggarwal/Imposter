@@ -17,7 +17,7 @@ export default defineConfig(() => {
           id: '/',
           name: 'Khabri — Desi & Global Imposter',
           short_name: 'Khabri',
-          description: 'Live multiplayer party imposter game with 1,200+ Indian & world-famous words, phone voting, and leaderboards.',
+          description: 'Live multiplayer party imposter game with 1,500+ Indian & world-famous words, phone voting, and leaderboards.',
           theme_color: '#0E121A',
           background_color: '#0E121A',
           display: 'standalone',
@@ -46,8 +46,10 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,woff,woff2}'],
-          navigateFallbackDenylist: [/^\/api/, /^\/ws/],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
