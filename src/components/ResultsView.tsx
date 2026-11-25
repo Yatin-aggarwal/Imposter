@@ -21,8 +21,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ room, playerId, onNext
 
   if (!result) return null;
 
-  const me = room.players.find((p) => p.id === playerId);
-  const isHost = Boolean(me?.isHost);
   const myDelta = result.scoreDeltas.find((d) => d.playerId === playerId);
   const rankedPlayers = [...room.players].sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
@@ -217,63 +215,47 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ room, playerId, onNext
               })}
             </div>
 
-            {/* Desktop Next Round Controls */}
+            {/* Desktop Next Round Controls (Equal for every player) */}
             <div className="hidden sm:flex items-center gap-3 mt-6 pt-5 border-t border-white/[0.06]">
-              {isHost ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={onNextRound}
-                    className="flex-1 min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 text-base font-semibold text-slate-950 hover:bg-amber-400 active:scale-[0.99] transition-[background-color,transform] duration-150 cursor-pointer"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>Play Round {room.roundNumber + 1}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onBackToLobby}
-                    className="min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#0E121A] px-4 text-sm font-semibold text-slate-200 hover:bg-white/[0.06] whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    <Settings2 className="w-4 h-4" />
-                    <span>Lobby</span>
-                  </button>
-                </>
-              ) : (
-                <div className="w-full rounded-xl bg-[#0E121A] border border-white/[0.06] px-4 py-3.5 text-center text-sm text-slate-300">
-                  Stay right here in room <span className="font-mono font-bold text-amber-400">{room.code}</span> — waiting for host to deal Round {room.roundNumber + 1}.
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={onNextRound}
+                className="flex-1 min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 text-base font-semibold text-slate-950 hover:bg-amber-400 active:scale-[0.99] transition-[background-color,transform] duration-150 cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Play Round {room.roundNumber + 1}</span>
+              </button>
+              <button
+                type="button"
+                onClick={onBackToLobby}
+                className="min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#0E121A] px-4 text-sm font-semibold text-slate-200 hover:bg-white/[0.06] whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Settings2 className="w-4 h-4" />
+                <span>Lobby</span>
+              </button>
             </div>
           </section>
         </div>
       </div>
 
-      {/* Mobile Sticky Replay Bar */}
+      {/* Mobile Sticky Replay Bar (Equal for every player) */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 z-30 p-4 bg-gradient-to-t from-[#0E121A] via-[#0E121A]/95 to-transparent flex gap-2.5">
-        {isHost ? (
-          <>
-            <button
-              type="button"
-              onClick={onNextRound}
-              className="flex-1 min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-semibold text-slate-950 shadow-xl active:scale-[0.98] transition-[background-color,transform] duration-150 cursor-pointer"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              <span>Play Round {room.roundNumber + 1}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onBackToLobby}
-              className="min-h-[50px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-[#151B26] px-4 text-sm font-semibold text-white whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Settings2 className="w-4 h-4" />
-              <span>Lobby</span>
-            </button>
-          </>
-        ) : (
-          <div className="w-full min-h-[48px] flex items-center justify-center rounded-xl bg-[#151B26] border border-white/10 px-4 text-xs font-medium text-slate-300">
-            Stay in room {room.code} — host will deal Round {room.roundNumber + 1}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={onNextRound}
+          className="flex-1 min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-semibold text-slate-950 shadow-xl active:scale-[0.98] transition-[background-color,transform] duration-150 cursor-pointer"
+        >
+          <Play className="w-4 h-4 fill-current" />
+          <span>Play Round {room.roundNumber + 1}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onBackToLobby}
+          className="min-h-[50px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-[#151B26] px-4 text-sm font-semibold text-white whitespace-nowrap shrink-0 cursor-pointer"
+        >
+          <Settings2 className="w-4 h-4" />
+          <span>Lobby</span>
+        </button>
       </div>
     </main>
   );

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Copy, Check, Share2, QrCode, Play, UserX, Trophy, Users, LogOut } from 'lucide-react';
+import { Copy, Check, Share2, QrCode, Play, Trophy, Users, LogOut } from 'lucide-react';
 import type { PublicRoomState, RoomSettings } from '../types/game';
 
 interface LobbyViewProps {
@@ -9,7 +9,6 @@ interface LobbyViewProps {
   error: string | null;
   onUpdateSettings: (settings: Partial<RoomSettings>) => void;
   onStartRound: () => void;
-  onKickPlayer: (targetId: string) => void;
   onLeaveRoom: () => void;
 }
 
@@ -19,15 +18,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   error,
   onUpdateSettings,
   onStartRound,
-  onKickPlayer,
   onLeaveRoom,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showQR, setShowQR] = useState(true);
   const [rightTab, setRightTab] = useState<'players' | 'leaderboard'>('players');
 
-  const me = room.players.find((p) => p.id === playerId);
-  const isHost = Boolean(me?.isHost);
   const connectedPlayers = room.players.filter((p) => p.connected);
   const canStart = connectedPlayers.length >= 3;
 
@@ -39,7 +35,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback copy
       const input = document.createElement('input');
       input.value = inviteUrl;
       document.body.appendChild(input);
@@ -87,9 +82,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   return (
     <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 pt-5 pb-28 sm:pb-14">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-        {/* Left Column: Room Code, QR Invite & Game Settings */}
+        {/* Left Column: Room Code, QR Invite & Shared Game Rules */}
         <div className="lg:col-span-5 space-y-6">
-          {/* Room Invite Card */}
           <section className="rounded-2xl bg-[#151B26] border border-white/[0.08] p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -111,10 +105,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             </div>
 
             <p className="mt-2.5 text-sm text-slate-400">
-              Ask friends sitting with you to scan the QR code or enter <span className="font-mono text-slate-200">{room.code}</span> on their phone.
+              Friends sitting with you can scan the QR code or enter{' '}
+              <span className="font-mono text-slate-200">{room.code}</span> on their phone.
             </p>
 
-            {/* Action Buttons */}
             <div className="mt-4 grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -156,7 +150,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             )}
           </section>
 
-          {/* Settings Card */}
+          {/* Shared Round Settings (Any player can adjust in lobby) */}
           <section className="rounded-2xl bg-[#151B26] border border-white/[0.08] p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="font-display text-lg font-bold text-white">Round Rules</h2>
@@ -165,92 +159,73 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </span>
             </div>
 
-            {isHost ? (
-              <div className="space-y-4">
-                <div>
-                  <span className="block text-xs font-medium text-slate-400 mb-2">Word Pack</span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['mixed', 'indian', 'global'] as const).map((pack) => (
+            <div className="space-y-4">
+              <div>
+                <span className="block text-xs font-medium text-slate-400 mb-2">Word Pack</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['mixed', 'indian', 'global'] as const).map((pack) => (
+                    <button
+                      key={pack}
+                      type="button"
+                      onClick={() => onUpdateSettings({ wordPack: pack })}
+                      className={`min-h-[44px] px-2.5 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                        room.settings.wordPack === pack
+                          ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                          : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
+                      }`}
+                    >
+                      {packLabels[pack]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="block text-xs font-medium text-slate-400 mb-2">
+                  Imposter Clue (Strictly One of Two)
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['either', 'similar_word', 'category'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => onUpdateSettings({ hintMode: mode })}
+                      className={`min-h-[44px] px-2.5 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                        room.settings.hintMode === mode
+                          ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                          : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
+                      }`}
+                    >
+                      {hintLabels[mode]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="block text-xs font-medium text-slate-400 mb-2">Number of Imposters</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[1, 2].map((count) => {
+                    const disabled = count === 2 && connectedPlayers.length < 6;
+                    return (
                       <button
-                        key={pack}
+                        key={count}
                         type="button"
-                        onClick={() => onUpdateSettings({ wordPack: pack })}
-                        className={`min-h-[44px] px-2.5 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                          room.settings.wordPack === pack
+                        disabled={disabled}
+                        onClick={() => onUpdateSettings({ imposterCount: count })}
+                        className={`min-h-[44px] px-3 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                          room.settings.imposterCount === count && !disabled
                             ? 'border-amber-500 bg-amber-500/15 text-amber-300'
                             : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
                         }`}
                       >
-                        {packLabels[pack]}
+                        {count === 1 ? '1 Imposter' : '2 Imposters (6+ Players)'}
                       </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="block text-xs font-medium text-slate-400 mb-2">
-                    Imposter Clue (Strictly One of Two)
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['either', 'similar_word', 'category'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => onUpdateSettings({ hintMode: mode })}
-                        className={`min-h-[44px] px-2.5 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                          room.settings.hintMode === mode
-                            ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                            : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
-                        }`}
-                      >
-                        {hintLabels[mode]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="block text-xs font-medium text-slate-400 mb-2">Number of Imposters</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[1, 2].map((count) => {
-                      const disabled = count === 2 && connectedPlayers.length < 6;
-                      return (
-                        <button
-                          key={count}
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => onUpdateSettings({ imposterCount: count })}
-                          className={`min-h-[44px] px-3 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                            room.settings.imposterCount === count && !disabled
-                              ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                              : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
-                          }`}
-                        >
-                          {count === 1 ? '1 Imposter' : '2 Imposters (6+ Players)'}
-                        </button>
-                      );
-                    })}
-                  </div>
+                    );
+                  })}
                 </div>
               </div>
-            ) : (
-              <div className="divide-y divide-white/[0.06] text-sm">
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="text-slate-400">Word Pack</span>
-                  <span className="font-semibold text-white">{packLabels[room.settings.wordPack]}</span>
-                </div>
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="text-slate-400">Imposter Clue</span>
-                  <span className="font-semibold text-white">{hintLabels[room.settings.hintMode]}</span>
-                </div>
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="text-slate-400">Imposters</span>
-                  <span className="font-semibold text-white">
-                    {room.settings.imposterCount === 2 && connectedPlayers.length >= 6 ? '2 Imposters' : '1 Imposter'}
-                  </span>
-                </div>
-              </div>
-            )}
+            </div>
           </section>
         </div>
 
@@ -263,7 +238,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   Players in Room ({connectedPlayers.length})
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Minimum 3 players required · Same room persists across rounds
+                  Everyone has equal controls · Minimum 3 players to start
                 </p>
               </div>
 
@@ -276,7 +251,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   }`}
                 >
                   <Users className="w-3.5 h-3.5" />
-                  <span>Roster</span>
+                  <span>Players</span>
                 </button>
                 <button
                   type="button"
@@ -310,32 +285,18 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                           )}
                         </div>
                         <div className="text-xs text-slate-400">
-                          {p.isHost ? 'Room Host' : 'Player'}
-                          <span className="mx-1.5" aria-hidden="true">·</span>
                           <span className={p.connected ? 'text-emerald-400' : 'text-slate-500'}>
-                            {p.connected ? 'Connected' : 'Reconnecting...'}
+                            {p.connected ? 'Ready in room' : 'Reconnecting...'}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      {room.roundNumber > 0 && (
-                        <span className="font-mono tabular-nums text-sm font-semibold text-slate-300">
-                          {p.score} pts
-                        </span>
-                      )}
-                      {isHost && p.id !== playerId && (
-                        <button
-                          type="button"
-                          onClick={() => onKickPlayer(p.id)}
-                          aria-label={`Remove ${p.name}`}
-                          className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                        >
-                          <UserX className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                    {room.roundNumber > 0 && (
+                      <span className="font-mono tabular-nums text-sm font-semibold text-slate-300 shrink-0">
+                        {p.score} pts
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -377,55 +338,43 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </div>
             )}
 
-            {/* Desktop Action Footer */}
+            {/* Desktop Action Footer (Equal for every player) */}
             <div className="hidden sm:block mt-6 pt-5 border-t border-white/[0.06]">
-              {isHost ? (
-                <button
-                  type="button"
-                  disabled={!canStart}
-                  onClick={onStartRound}
-                  className="w-full min-h-[52px] inline-flex items-center justify-center gap-2.5 rounded-xl bg-amber-500 px-6 text-base font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-45 disabled:cursor-not-allowed active:scale-[0.99] transition-[background-color,transform] duration-150 cursor-pointer"
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>
-                    {canStart
-                      ? room.roundNumber === 0
-                        ? 'Start Round 1'
-                        : `Start Round ${room.roundNumber + 1}`
-                      : `Need ${3 - connectedPlayers.length} More Player${3 - connectedPlayers.length === 1 ? '' : 's'} to Start`}
-                  </span>
-                </button>
-              ) : (
-                <div className="rounded-xl bg-[#0E121A] border border-white/[0.06] px-4 py-3.5 text-center text-sm text-slate-300">
-                  Waiting for the host to start Round {room.roundNumber + 1}. Keep your screen ready.
-                </div>
-              )}
+              <button
+                type="button"
+                disabled={!canStart}
+                onClick={onStartRound}
+                className="w-full min-h-[52px] inline-flex items-center justify-center gap-2.5 rounded-xl bg-amber-500 px-6 text-base font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-45 disabled:cursor-not-allowed active:scale-[0.99] transition-[background-color,transform] duration-150 cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>
+                  {canStart
+                    ? room.roundNumber === 0
+                      ? 'Start Round 1'
+                      : `Start Round ${room.roundNumber + 1}`
+                    : `Need ${3 - connectedPlayers.length} More Player${3 - connectedPlayers.length === 1 ? '' : 's'} to Start`}
+                </span>
+              </button>
             </div>
           </section>
         </div>
       </div>
 
-      {/* Mobile Fixed Thumb-Zone CTA */}
+      {/* Mobile Fixed Thumb-Zone CTA (Equal for every player) */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 z-30 p-4 bg-gradient-to-t from-[#0E121A] via-[#0E121A]/95 to-transparent">
-        {isHost ? (
-          <button
-            type="button"
-            disabled={!canStart}
-            onClick={onStartRound}
-            className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-6 text-base font-semibold text-slate-950 shadow-xl disabled:opacity-45 active:scale-[0.98] transition-[background-color,transform] duration-150 cursor-pointer"
-          >
-            <Play className="w-4 h-4 fill-current" />
-            <span>
-              {canStart
-                ? `Start Round ${room.roundNumber + 1}`
-                : `Waiting for ${3 - connectedPlayers.length} more player${3 - connectedPlayers.length === 1 ? '' : 's'}`}
-            </span>
-          </button>
-        ) : (
-          <div className="w-full min-h-[48px] flex items-center justify-center rounded-xl bg-[#151B26] border border-white/10 px-4 text-sm font-medium text-slate-300">
-            Waiting for host to start Round {room.roundNumber + 1}
-          </div>
-        )}
+        <button
+          type="button"
+          disabled={!canStart}
+          onClick={onStartRound}
+          className="w-full min-h-[52px] inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-6 text-base font-semibold text-slate-950 shadow-xl disabled:opacity-45 active:scale-[0.98] transition-[background-color,transform] duration-150 cursor-pointer"
+        >
+          <Play className="w-4 h-4 fill-current" />
+          <span>
+            {canStart
+              ? `Start Round ${room.roundNumber + 1}`
+              : `Waiting for ${3 - connectedPlayers.length} more player${3 - connectedPlayers.length === 1 ? '' : 's'}`}
+          </span>
+        </button>
       </div>
     </main>
   );

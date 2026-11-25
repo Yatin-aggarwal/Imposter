@@ -65,12 +65,10 @@ interface InternalPlayer {
   id: string;
   name: string;
   avatarColor: string;
-  isHost: boolean;
   connected: boolean;
   score: number;
   roundsWon: number;
   roundsPlayed: number;
-  isReadyToVote: boolean;
   inCurrentRound: boolean;
   transport: 'local' | 'peer' | 'bc';
   peerConn: DataConnection | null;
@@ -100,13 +98,13 @@ export interface SessionCallbacks {
 }
 
 /**
- * Authoritative Host Room Engine running directly in the Host's browser.
- * Persists word history, leaderboard, and room recovery state in localStorage.
- * Connects remote phones over WebRTC (PeerJS) and local browser tabs via BroadcastChannel.
+ * Room Engine hosted transparently on the creator's device.
+ * The room creator has NO special gameplay privileges—every player can configure lobby settings,
+ * start rounds, and vote equally. The imposter is NEVER revealed until ALL active players have voted.
  */
 export class HostRoomController {
   public code: string;
-  private hostId: string;
+  private creatorId: string;
   private phase: GamePhase = 'LOBBY';
   private roundNumber = 0;
   private settings: RoomSettings;
@@ -130,7 +128,7 @@ export class HostRoomController {
     },
     callbacks: SessionCallbacks,
   ) {
-    this.hostId = options.hostId;
+    this.creatorId = options.hostId;
     this.callbacks = callbacks;
     this.usedWordIds = loadUsedWordIds();
 
@@ -141,22 +139,25 @@ export class HostRoomController {
       this.settings = { ...snap.settings };
       for (const p of snap.players) {
         this.players.set(p.id, {
-          ...p,
-          isHost: p.id === options.hostId,
+          id: p.id,
+          name: p.name,
+          avatarColor: p.avatarColor,
           connected: p.id === options.hostId,
-          isReadyToVote: false,
+          score: p.score,
+          roundsWon: p.roundsWon,
+          roundsPlayed: p.roundsPlayed,
           inCurrentRound: false,
           transport: p.id === options.hostId ? 'local' : 'peer',
           peerConn: null,
         });
       }
       if (!this.players.has(options.hostId)) {
-        this.addHostPlayer(options.hostId, options.hostName);
+        this.addCreatorPlayer(options.hostId, options.hostName);
       }
     } else {
       this.code = generateRoomCode();
       this.settings = { ...options.settings };
-      this.addHostPlayer(options.hostId, options.hostName);
+      this.addCreatorPlayer(options.hostId, options.hostName);
     }
 
     this.callbacks.onStatus('connecting');
@@ -165,17 +166,15 @@ export class HostRoomController {
     this.broadcastAll();
   }
 
-  private addHostPlayer(id: string, name: string): void {
+  private addCreatorPlayer(id: string, name: string): void {
     this.players.set(id, {
       id,
       name: name.trim().slice(0, 22),
       avatarColor: AVATAR_COLORS[0],
-      isHost: true,
       connected: true,
       score: 0,
       roundsWon: 0,
       roundsPlayed: 0,
-      isReadyToVote: false,
       inCurrentRound: false,
       transport: 'local',
       peerConn: null,
@@ -247,25 +246,19 @@ export class HostRoomController {
         }
       });
 
-      conn.on('close', () => {
+      const handleDisconnect = () => {
         if (this.destroyed || !boundPlayerId) return;
         const p = this.players.get(boundPlayerId);
         if (p && p.peerConn === conn) {
           p.connected = false;
           p.peerConn = null;
+          this.checkAutoFinalizeVotes();
           this.broadcastAll();
         }
-      });
+      };
 
-      conn.on('error', () => {
-        if (this.destroyed || !boundPlayerId) return;
-        const p = this.players.get(boundPlayerId);
-        if (p && p.peerConn === conn) {
-          p.connected = false;
-          p.peerConn = null;
-          this.broadcastAll();
-        }
-      });
+      conn.on('close', handleDisconnect);
+      conn.on('error', handleDisconnect);
     });
 
     peer.on('error', (err) => {
@@ -279,7 +272,6 @@ export class HostRoomController {
         this.broadcastAll();
         return;
       }
-      // Even if signaling server has a hiccup, keep local room usable and show connected for local/BC
       this.callbacks.onStatus('connected');
     });
 
@@ -294,11 +286,11 @@ export class HostRoomController {
   }
 
   public sendHostAction(msg: ClientMessage): void {
-    this.handleClientMessage(this.hostId, msg, 'local', null);
+    this.handleClientMessage(this.creatorId, msg, 'local', null);
   }
 
   private sendToPlayer(player: InternalPlayer, message: ServerMessage): void {
-    if (player.id === this.hostId) {
+    if (player.id === this.creatorId) {
       if (message.type === 'room:state') {
         this.callbacks.onState(message.state, message.secret);
       } else if (message.type === 'room:error') {
@@ -346,19 +338,18 @@ export class HostRoomController {
         id: p.id,
         name: p.name,
         avatarColor: p.avatarColor,
-        isHost: p.isHost,
         connected: p.connected,
         score: p.score,
         roundsWon: p.roundsWon,
         roundsPlayed: p.roundsPlayed,
-        isReadyToVote: p.isReadyToVote,
         hasVoted: activeVotes ? activeVotes.has(p.id) : false,
         inCurrentRound: p.inCurrentRound,
       }));
 
-    const activePlayers = Array.from(this.players.values()).filter((p) => p.inCurrentRound && p.connected);
-    const readyCount = activePlayers.filter((p) => p.isReadyToVote).length;
-    const votedCount = activeVotes ? activeVotes.size : 0;
+    const activeVoters = Array.from(this.players.values()).filter((p) => p.inCurrentRound && p.connected);
+    const votedCount = activeVotes
+      ? activeVoters.filter((p) => activeVotes.has(p.id)).length
+      : 0;
     const packPool = getPackPool(this.settings.wordPack);
     const usedInPack = packPool.filter((w) => this.usedWordIds.has(w.id)).length;
 
@@ -373,9 +364,10 @@ export class HostRoomController {
       usedWordCount: usedInPack,
       availableWordCount: Math.max(0, packPool.length - usedInPack),
       totalBankSize: WORD_BANK.length,
-      readyCount,
       votedCount,
+      activeVoterCount: activeVoters.length,
       myVoteTargetId: activeVotes?.get(viewerId) ?? null,
+      // Strictly null until phase === 'RESULTS' (only after ALL players have voted)
       lastResult: this.phase === 'RESULTS' ? this.lastResult : null,
     };
   }
@@ -387,7 +379,7 @@ export class HostRoomController {
 
     const isImposter = this.activeRound.imposterIds.has(playerId);
     if (isImposter) {
-      // Strictly ONLY ONE hint (similar_word OR category), never both and never the secret word
+      // Strictly ONLY ONE clue (either similar_word OR category), never both and never the secret word
       return {
         roundNumber: this.activeRound.roundNumber,
         role: 'imposter',
@@ -412,7 +404,7 @@ export class HostRoomController {
         state: this.buildPublicRoomState(p.id),
         secret: this.buildSecretForPlayer(p.id),
       });
-      if (leaderboard && p.id !== this.hostId) {
+      if (leaderboard && p.id !== this.creatorId) {
         this.sendToPlayer(p, { type: 'leaderboard:updated', leaderboard });
       }
     }
@@ -422,19 +414,19 @@ export class HostRoomController {
   }
 
   private persistSnapshot(): void {
-    const hostPlayer = this.players.get(this.hostId);
-    if (!hostPlayer) return;
+    const creator = this.players.get(this.creatorId);
+    if (!creator) return;
     const snapshot: PersistedHostSnapshot = {
       code: this.code,
-      hostPlayerId: this.hostId,
-      hostPlayerName: hostPlayer.name,
+      hostPlayerId: this.creatorId,
+      hostPlayerName: creator.name,
       roundNumber: this.roundNumber,
       settings: { ...this.settings },
       players: Array.from(this.players.values()).map((p) => ({
         id: p.id,
         name: p.name,
         avatarColor: p.avatarColor,
-        isHost: p.isHost,
+        isHost: p.id === this.creatorId,
         score: p.score,
         roundsWon: p.roundsWon,
         roundsPlayed: p.roundsPlayed,
@@ -442,6 +434,16 @@ export class HostRoomController {
       updatedAt: Date.now(),
     };
     saveHostRoomSnapshot(snapshot);
+  }
+
+  private checkAutoFinalizeVotes(): boolean {
+    if (this.phase !== 'PLAYING' || !this.activeRound) return false;
+    const activeVoters = Array.from(this.players.values()).filter((p) => p.inCurrentRound && p.connected);
+    if (activeVoters.length > 0 && activeVoters.every((p) => this.activeRound?.votes.has(p.id))) {
+      this.finalizeVoting();
+      return true;
+    }
+    return false;
   }
 
   private handleClientMessage(
@@ -492,12 +494,10 @@ export class HostRoomController {
           id: senderId,
           name: cleanName,
           avatarColor: color,
-          isHost: false,
           connected: true,
           score: 0,
           roundsWon: 0,
           roundsPlayed: 0,
-          isReadyToVote: false,
           inCurrentRound: false,
           transport,
           peerConn: conn,
@@ -515,9 +515,10 @@ export class HostRoomController {
       return;
     }
 
+    // Equal rights: ANY connected player in the room can update lobby settings, start rounds, vote, or return to lobby
     switch (msg.type) {
       case 'room:update_settings': {
-        if (!player.isHost) return;
+        if (this.phase !== 'LOBBY') return;
         if (msg.settings.wordPack && ['mixed', 'indian', 'global'].includes(msg.settings.wordPack)) {
           this.settings.wordPack = msg.settings.wordPack;
         }
@@ -533,10 +534,15 @@ export class HostRoomController {
       }
 
       case 'room:start_round': {
-        if (!player.isHost) return;
+        if (this.phase === 'PLAYING') return;
         const connectedPlayers = Array.from(this.players.values()).filter((p) => p.connected);
         if (connectedPlayers.length < 3) {
-          this.callbacks.onError('At least 3 connected players are required to start a round.');
+          this.sendErrorDirect(
+            senderId,
+            transport,
+            conn,
+            'At least 3 connected players are required to start a round.',
+          );
           return;
         }
 
@@ -572,7 +578,6 @@ export class HostRoomController {
         this.lastResult = null;
 
         for (const p of this.players.values()) {
-          p.isReadyToVote = false;
           p.inCurrentRound = p.connected;
         }
 
@@ -592,26 +597,8 @@ export class HostRoomController {
         break;
       }
 
-      case 'room:ready_to_vote': {
-        if (this.phase !== 'PLAYING' || !player.inCurrentRound) return;
-        player.isReadyToVote = Boolean(msg.ready);
-        const activePlayers = Array.from(this.players.values()).filter((p) => p.inCurrentRound && p.connected);
-        if (activePlayers.length > 0 && activePlayers.every((p) => p.isReadyToVote)) {
-          this.phase = 'VOTING';
-        }
-        this.broadcastAll();
-        break;
-      }
-
-      case 'room:open_voting': {
-        if (!player.isHost || this.phase !== 'PLAYING') return;
-        this.phase = 'VOTING';
-        this.broadcastAll();
-        break;
-      }
-
       case 'room:cast_vote': {
-        if (this.phase !== 'VOTING' || !this.activeRound || !player.inCurrentRound) return;
+        if (this.phase !== 'PLAYING' || !this.activeRound || !player.inCurrentRound) return;
         const targetId = String(msg.targetId || '');
         if (!targetId || targetId === player.id) {
           this.sendErrorDirect(senderId, transport, conn, 'You cannot vote for yourself.');
@@ -621,27 +608,21 @@ export class HostRoomController {
         if (!target || !target.inCurrentRound) return;
 
         this.activeRound.votes.set(player.id, targetId);
-        const activeVoters = Array.from(this.players.values()).filter((p) => p.inCurrentRound && p.connected);
-        if (activeVoters.length > 0 && activeVoters.every((p) => this.activeRound?.votes.has(p.id))) {
-          this.finalizeVoting();
-        } else {
+
+        // Reveal happens ONLY automatically once ALL active players have cast their vote
+        const finalized = this.checkAutoFinalizeVotes();
+        if (!finalized) {
           this.broadcastAll();
         }
         break;
       }
 
-      case 'room:force_tally': {
-        if (!player.isHost || this.phase !== 'VOTING') return;
-        this.finalizeVoting();
-        break;
-      }
-
       case 'room:back_to_lobby': {
-        if (!player.isHost) return;
+        // Only allowed once round results are already revealed (never mid-round to peek or cancel)
+        if (this.phase !== 'RESULTS') return;
         this.phase = 'LOBBY';
         this.activeRound = null;
         for (const p of this.players.values()) {
-          p.isReadyToVote = false;
           p.inCurrentRound = false;
         }
         this.persistSnapshot();
@@ -649,27 +630,10 @@ export class HostRoomController {
         break;
       }
 
-      case 'room:kick_player': {
-        if (!player.isHost) return;
-        const target = this.players.get(msg.targetId);
-        if (!target || target.id === this.hostId) return;
-        this.sendToPlayer(target, { type: 'room:kicked', message: 'You were removed from the room by the host.' });
-        if (target.peerConn) {
-          try {
-            target.peerConn.close();
-          } catch {
-            // Ignore close error
-          }
-        }
-        this.players.delete(target.id);
-        this.persistSnapshot();
-        this.broadcastAll();
-        break;
-      }
-
       case 'room:leave': {
-        if (player.id === this.hostId) return;
+        if (player.id === this.creatorId) return;
         this.players.delete(player.id);
+        this.checkAutoFinalizeVotes();
         this.persistSnapshot();
         this.broadcastAll();
         break;
@@ -678,7 +642,7 @@ export class HostRoomController {
   }
 
   private finalizeVoting(): void {
-    if (!this.activeRound || this.phase !== 'VOTING') return;
+    if (!this.activeRound || this.phase !== 'PLAYING') return;
 
     const round = this.activeRound;
     const roundPlayers = Array.from(this.players.values()).filter((p) => p.inCurrentRound);
@@ -828,7 +792,7 @@ export class HostRoomController {
 }
 
 /**
- * Guest Room Client connecting directly to the Host's phone via PeerJS WebRTC
+ * Guest Room Client connecting directly to the room creator's device via PeerJS WebRTC
  * (with instant BroadcastChannel fast-path for same-browser tabs).
  */
 export class GuestRoomClient {
@@ -899,7 +863,6 @@ export class GuestRoomClient {
       playerName: this.playerName,
     };
 
-    // 1. Fast-path: BroadcastChannel for same-browser tabs
     if (typeof BroadcastChannel !== 'undefined') {
       if (this.bc) this.bc.close();
       const channel = new BroadcastChannel(`khabri-bc-${this.roomCode}`);
@@ -926,7 +889,6 @@ export class GuestRoomClient {
       channel.postMessage({ dir: 'c2h', senderId: this.playerId, payload: joinMsg } satisfies BroadcastEnvelope);
     }
 
-    // 2. Primary cross-phone path: PeerJS WebRTC direct to Host phone
     if (this.peer) {
       try {
         this.peer.destroy();
@@ -941,7 +903,7 @@ export class GuestRoomClient {
     this.connectTimeout = window.setTimeout(() => {
       if (this.destroyed || this.activeTransport !== 'none') return;
       this.callbacks.onError(
-        `Could not reach room ${this.roomCode}. Make sure the host has the room open and check the 4-letter code.`,
+        `Could not reach room ${this.roomCode}. Make sure the room screen is still open and check the 4-letter code.`,
       );
       this.destroy();
       this.callbacks.onStatus('idle');
@@ -982,7 +944,7 @@ export class GuestRoomClient {
       conn.on('error', () => {
         if (this.destroyed || this.activeTransport === 'bc') return;
         this.callbacks.onError(
-          `Connection to room ${this.roomCode} dropped. Check that the host screen is still open.`,
+          `Connection to room ${this.roomCode} dropped. Check that the room creator's screen is still open.`,
         );
       });
     });
@@ -991,7 +953,7 @@ export class GuestRoomClient {
       if (this.destroyed || this.activeTransport === 'bc') return;
       if (err.type === 'peer-unavailable') {
         this.clearTimers();
-        this.callbacks.onError(`Room ${this.roomCode} was not found. Ask the host to verify the 4-letter code.`);
+        this.callbacks.onError(`Room ${this.roomCode} was not found. Double-check the 4-letter code.`);
         this.destroy();
         this.callbacks.onStatus('idle');
       }

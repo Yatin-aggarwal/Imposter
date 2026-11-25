@@ -189,12 +189,8 @@ export function useGameSocket() {
   );
 
   const startRound = useCallback(() => sendAction({ type: 'room:start_round' }), [sendAction]);
-  const setReadyToVote = useCallback((ready: boolean) => sendAction({ type: 'room:ready_to_vote', ready }), [sendAction]);
-  const openVoting = useCallback(() => sendAction({ type: 'room:open_voting' }), [sendAction]);
   const castVote = useCallback((targetId: string) => sendAction({ type: 'room:cast_vote', targetId }), [sendAction]);
-  const forceTally = useCallback(() => sendAction({ type: 'room:force_tally' }), [sendAction]);
   const backToLobby = useCallback(() => sendAction({ type: 'room:back_to_lobby' }), [sendAction]);
-  const kickPlayer = useCallback((targetId: string) => sendAction({ type: 'room:kick_player', targetId }), [sendAction]);
 
   return {
     playerId,
@@ -212,11 +208,7 @@ export function useGameSocket() {
     refreshLeaderboard,
     updateSettings,
     startRound,
-    setReadyToVote,
-    openVoting,
     castVote,
-    forceTally,
     backToLobby,
-    kickPlayer,
   };
 }

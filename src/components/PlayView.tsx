@@ -1,30 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, EyeOff, Mic, CheckCircle2, Vote } from 'lucide-react';
+import { Eye, EyeOff, Mic, Check, Lock } from 'lucide-react';
 import type { PublicRoomState, SecretPlayerAssignment } from '../types/game';
-import { playCardRevealSound } from '../utils/sound';
+import { playCardRevealSound, playVoteCastSound } from '../utils/sound';
 
 interface PlayViewProps {
   room: PublicRoomState;
   secret: SecretPlayerAssignment | null;
   playerId: string;
-  onSetReady: (ready: boolean) => void;
-  onOpenVoting: () => void;
+  onCastVote: (targetId: string) => void;
 }
 
-export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSetReady, onOpenVoting }) => {
+export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onCastVote }) => {
   const [revealed, setRevealed] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
 
-  // Reset card face-down whenever a new round starts
+  // Reset card face-down whenever a fresh round starts
   useEffect(() => {
     setRevealed(false);
   }, [room.roundNumber]);
 
-  const me = room.players.find((p) => p.id === playerId);
-  const isHost = Boolean(me?.isHost);
-  const isReady = Boolean(me?.isReadyToVote);
   const isStartingPlayer = room.startingPlayerId === playerId;
-  const activeConnected = room.players.filter((p) => p.connected && p.inCurrentRound);
+  const activePlayers = room.players.filter((p) => p.inCurrentRound);
+  const votableTargets = activePlayers.filter((p) => p.id !== playerId);
+  const totalVoters = room.activeVoterCount || activePlayers.filter((p) => p.connected).length;
+  const remainingVotes = Math.max(0, totalVoters - room.votedCount);
+  const progressPct = totalVoters > 0 ? Math.min(100, Math.round((room.votedCount / totalVoters) * 100)) : 0;
+
+  const myVotedPlayer = room.players.find((p) => p.id === room.myVoteTargetId);
 
   const handleToggleReveal = () => {
     const next = !revealed;
@@ -34,9 +36,17 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSe
     }
   };
 
+  const handleTapVote = (targetId: string) => {
+    if (!secret) return;
+    if (room.myVoteTargetId !== targetId) {
+      playVoteCastSound();
+      onCastVote(targetId);
+    }
+  };
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 pt-5 pb-28 sm:pb-14">
-      {/* Top Spotlight: Random Starting Player */}
+    <main className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 pt-5 pb-14">
+      {/* Top Spotlight: Random Discussion Starter & Live Anonymous Vote Count */}
       <section className="rounded-2xl bg-[#151B26] border border-white/[0.08] p-5 sm:p-6 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-4">
@@ -45,21 +55,21 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSe
             </div>
             <div>
               <p className="text-xs font-medium text-amber-400">
-                Round {room.roundNumber} · Discussion Starter (Randomly Picked)
+                Round {room.roundNumber} · Speaks First (Randomly Picked)
               </p>
               <h1 className="font-display text-2xl sm:text-3xl font-bold text-white mt-0.5">
-                {isStartingPlayer ? 'You start the round!' : `${room.startingPlayerName} speaks first`}
+                {isStartingPlayer ? 'You start the discussion!' : `${room.startingPlayerName} speaks first`}
               </h1>
               <p className="text-sm text-slate-400 mt-1">
-                Give one spoken clue about the word, then go around the room in person.
+                Peek at your card, give clues out loud around the circle, then tap who you suspect.
               </p>
             </div>
           </div>
 
           <div className="text-left sm:text-right shrink-0">
-            <div className="text-xs text-slate-400">Ready to Vote</div>
-            <div className="font-mono tabular-nums text-xl font-bold text-white mt-0.5">
-              {room.readyCount} / {activeConnected.length}
+            <div className="text-xs text-slate-400">Votes Cast</div>
+            <div className="font-mono tabular-nums text-2xl font-bold text-amber-400 mt-0.5">
+              {room.votedCount} / {totalVoters}
             </div>
           </div>
         </div>
@@ -67,7 +77,7 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSe
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
         {/* Left Column: Tactile Secret Card */}
-        <div className="lg:col-span-6 flex flex-col items-center">
+        <div className="lg:col-span-5 flex flex-col items-center">
           {secret ? (
             <div className="w-full max-w-sm">
               <button
@@ -104,7 +114,7 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSe
                         </div>
                         <div className="font-display text-2xl font-bold text-white">Tap to Peek</div>
                         <p className="text-xs text-slate-300">
-                          Shield your phone from people sitting beside you
+                          Shield your phone from players sitting beside you
                         </p>
                       </div>
                     </div>
@@ -135,7 +145,7 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSe
                           {secret.word}
                         </div>
                         <p className="mt-5 text-sm text-slate-300 leading-relaxed">
-                          Describe this word naturally so civilians trust you, without making it too easy for the imposter.
+                          Describe it subtly so civilians recognize you, without giving the word away to the imposter.
                         </p>
                       </div>
                     ) : (
@@ -157,7 +167,7 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSe
                     )}
 
                     <div className="pt-4 border-t border-white/10 text-center text-xs text-slate-400">
-                      Tap anywhere on card to flip face-down before putting your phone down
+                      Tap card again to flip face-down for privacy
                     </div>
                   </div>
                 </div>
@@ -167,114 +177,127 @@ export const PlayView: React.FC<PlayViewProps> = ({ room, secret, playerId, onSe
             <div className="w-full max-w-sm rounded-3xl bg-[#151B26] border border-white/10 p-8 text-center">
               <h2 className="font-display text-xl font-bold text-white">Round Already Underway</h2>
               <p className="mt-2 text-sm text-slate-400 leading-relaxed">
-                You joined while Round {room.roundNumber} was already active. Watch the discussion and you will
+                You joined while Round {room.roundNumber} was already active. Watch the discussion—you will
                 automatically be dealt in for Round {room.roundNumber + 1}.
               </p>
             </div>
           )}
         </div>
 
-        {/* Right Column: Table Status & Move to Voting */}
-        <div className="lg:col-span-6 space-y-6">
+        {/* Right Column: Ultra-Easy 1-Tap Voting Grid & Auto-Reveal Progress */}
+        <div className="lg:col-span-7 space-y-6">
           <section className="rounded-2xl bg-[#151B26] border border-white/[0.08] p-5 sm:p-6">
-            <h2 className="font-display text-lg font-bold text-white">Players at the Table</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Once everyone finishes giving their clues out loud, tap Ready to Vote.
-            </p>
-
-            <div className="divide-y divide-white/[0.06] mt-4">
-              {room.players.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-slate-950 shrink-0"
-                      style={{ backgroundColor: p.avatarColor }}
-                    >
-                      {p.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-semibold text-white text-sm truncate">
-                        {p.name}
-                        {p.id === playerId ? ' (You)' : ''}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {p.id === room.startingPlayerId ? 'Starts discussion' : p.isHost ? 'Host' : 'Player'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-xs font-medium shrink-0">
-                    {p.isReadyToVote ? (
-                      <span className="inline-flex items-center gap-1.5 text-emerald-400">
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>Ready</span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">Discussing</span>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-white/[0.06]">
+              <div>
+                <h2 className="font-display text-xl sm:text-2xl font-bold text-white">
+                  Vote for the Imposter
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  {myVotedPlayer ? (
+                    <>
+                      Your vote is on <strong className="text-amber-300">{myVotedPlayer.name}</strong>. Tap another
+                      player to switch before everyone finishes.
+                    </>
+                  ) : (
+                    'Tap any player below to cast your vote in one tap.'
+                  )}
+                </p>
+              </div>
             </div>
 
-            {/* Desktop Controls */}
-            <div className="hidden sm:flex flex-col gap-3 mt-6 pt-5 border-t border-white/[0.06]">
-              {secret && (
-                <button
-                  type="button"
-                  onClick={() => onSetReady(!isReady)}
-                  className={`w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition-colors cursor-pointer ${
-                    isReady
-                      ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20'
-                      : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{isReady ? 'Marked Ready — Tap to Undo' : 'Ready to Vote'}</span>
-                </button>
-              )}
+            {secret ? (
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                {votableTargets.map((target) => {
+                  const isMyVote = room.myVoteTargetId === target.id;
+                  return (
+                    <button
+                      key={target.id}
+                      type="button"
+                      onClick={() => handleTapVote(target.id)}
+                      aria-pressed={isMyVote}
+                      className={`min-h-[96px] flex flex-col items-center justify-center gap-2 rounded-2xl border p-4 text-center active:scale-[0.98] transition-[background-color,border-color,transform] duration-150 cursor-pointer ${
+                        isMyVote
+                          ? 'border-amber-400 bg-amber-500/15 shadow-lg shadow-amber-500/5'
+                          : 'border-white/[0.09] bg-[#0E121A] hover:border-white/25 hover:bg-[#121722]'
+                      }`}
+                    >
+                      <div className="relative">
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-slate-950"
+                          style={{ backgroundColor: target.avatarColor }}
+                        >
+                          {target.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        {isMyVote && (
+                          <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center border-2 border-[#151B26]">
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-full">
+                        <div className="font-semibold text-white text-sm sm:text-base truncate">{target.name}</div>
+                        <div className={`text-xs mt-0.5 ${isMyVote ? 'font-semibold text-amber-300' : 'text-slate-500'}`}>
+                          {isMyVote ? 'Your Vote' : 'Tap to Vote'}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-slate-400">
+                Voting will open for you automatically in Round {room.roundNumber + 1}.
+              </div>
+            )}
 
-              {isHost && (
-                <button
-                  type="button"
-                  onClick={onOpenVoting}
-                  className="w-full min-h-[46px] inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#0E121A] px-5 text-sm font-semibold text-slate-100 hover:bg-white/[0.06] transition-colors cursor-pointer"
-                >
-                  <Vote className="w-4 h-4 text-amber-400" />
-                  <span>Open Voting Now (Host)</span>
-                </button>
-              )}
+            {/* Strictly Locked Auto-Reveal Progress Bar (Zero Early Reveal Options) */}
+            <div className="mt-6 pt-5 border-t border-white/[0.06]">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
+                  <Lock className="w-3.5 h-3.5 text-amber-400" />
+                  <span>
+                    {remainingVotes === 1
+                      ? 'Waiting for 1 more player to vote'
+                      : `Waiting for ${remainingVotes} more players to vote`}
+                  </span>
+                </span>
+                <span className="font-mono tabular-nums font-semibold text-amber-400">
+                  {room.votedCount} / {totalVoters}
+                </span>
+              </div>
+
+              <div className="h-2 w-full rounded-full bg-[#0E121A] overflow-hidden">
+                <div
+                  className="h-full bg-amber-500 transition-[width] duration-300"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+
+              <p className="mt-2.5 text-xs text-slate-400">
+                The imposter stays completely secret until every player votes—then results reveal automatically for everyone.
+              </p>
+
+              {/* Anonymous Voted vs Waiting Roster */}
+              <div className="mt-4 divide-y divide-white/[0.06]">
+                {activePlayers.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between py-2 text-sm">
+                    <span className="text-slate-200 truncate pr-2">
+                      {p.name}
+                      {p.id === playerId ? ' (You)' : ''}
+                    </span>
+                    <span
+                      className={`text-xs font-semibold shrink-0 ${
+                        p.hasVoted ? 'text-emerald-400' : 'text-slate-500'
+                      }`}
+                    >
+                      {p.hasVoted ? 'Voted' : 'Waiting'}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         </div>
-      </div>
-
-      {/* Mobile Sticky Action Bar */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-30 p-4 bg-gradient-to-t from-[#0E121A] via-[#0E121A]/95 to-transparent flex gap-2.5">
-        {secret && (
-          <button
-            type="button"
-            onClick={() => onSetReady(!isReady)}
-            className={`flex-1 min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold shadow-xl transition-colors cursor-pointer ${
-              isReady
-                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
-                : 'bg-amber-500 text-slate-950'
-            }`}
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>{isReady ? 'Ready' : 'Ready to Vote'}</span>
-          </button>
-        )}
-        {isHost && (
-          <button
-            type="button"
-            onClick={onOpenVoting}
-            className="min-h-[50px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-[#151B26] px-4 text-sm font-semibold text-white whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Vote className="w-4 h-4 text-amber-400" />
-            <span>Vote Now</span>
-          </button>
-        )}
       </div>
     </main>
   );

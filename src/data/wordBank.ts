@@ -2,6 +2,7 @@ import type { WordBankStats, WordEntry, WordPack, WordRegion } from '../types/ga
 import { INDIAN_WORDS_PART_1 } from './wordsIndian1';
 import { INDIAN_WORDS_PART_2 } from './wordsIndian2';
 import { INDIAN_WORDS_PART_3 } from './wordsIndian3';
+import { INDIAN_WORDS_PART_4 } from './wordsIndian4';
 import { GLOBAL_WORDS_PART_1 } from './wordsGlobal1';
 import { GLOBAL_WORDS_PART_2 } from './wordsGlobal2';
 
@@ -46,6 +47,7 @@ function buildBank(): WordEntry[] {
   ingest(INDIAN_WORDS_PART_1, 'indian');
   ingest(INDIAN_WORDS_PART_2, 'indian');
   ingest(INDIAN_WORDS_PART_3, 'indian');
+  ingest(INDIAN_WORDS_PART_4, 'indian');
   ingest(GLOBAL_WORDS_PART_1, 'global');
   ingest(GLOBAL_WORDS_PART_2, 'global');
 
