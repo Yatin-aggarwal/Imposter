@@ -4,7 +4,7 @@ const KEYS = {
   PLAYER_ID: 'khabri_player_id_v1',
   PLAYER_NAME: 'khabri_player_name_v1',
   LAST_ROOM: 'khabri_last_room_v1',
-  USED_WORDS: 'khabri_used_words_v1',
+  USED_WORDS: 'khabri_used_words_v2',
   LEADERBOARD: 'khabri_leaderboard_v1',
   HOST_SNAPSHOT: 'khabri_host_snapshot_v1',
 } as const;

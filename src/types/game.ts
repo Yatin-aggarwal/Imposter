@@ -2,23 +2,17 @@ export type WordRegion = 'indian' | 'global';
 
 export type WordPack = 'mixed' | 'indian' | 'global';
 
-export type ImposterHintMode = 'either' | 'similar_word' | 'category';
-
-export type ImposterHintType = 'similar_word' | 'category';
-
 export type GamePhase = 'LOBBY' | 'PLAYING' | 'RESULTS';
 
 export interface WordEntry {
   id: string;
   word: string;
-  similarWord: string;
   category: string;
   region: WordRegion;
 }
 
 export interface RoomSettings {
   wordPack: WordPack;
-  hintMode: ImposterHintMode;
   imposterCount: number;
 }
 
@@ -38,8 +32,7 @@ export interface SecretPlayerAssignment {
   roundNumber: number;
   role: 'civilian' | 'imposter';
   word?: string;
-  hintType?: ImposterHintType;
-  hintValue?: string;
+  category?: string;
 }
 
 export interface VoteBreakdownItem {
@@ -68,11 +61,8 @@ export interface RoundResult {
   imposterIds: string[];
   imposterNames: string[];
   secretWord: string;
-  similarWord: string;
   category: string;
   region: WordRegion;
-  hintType: ImposterHintType;
-  hintValue: string;
   startingPlayerId: string;
   startingPlayerName: string;
   voteCounts: Record<string, number>;

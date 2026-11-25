@@ -109,10 +109,8 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ room, playerId, onNext
                 <span className="font-semibold text-rose-400 text-right">{result.imposterNames.join(', ')}</span>
               </div>
               <div className="flex items-center justify-between gap-4 py-3">
-                <span className="text-slate-400">
-                  Imposter&apos;s Clue ({result.hintType === 'similar_word' ? 'Similar Word' : 'Category'})
-                </span>
-                <span className="font-semibold text-white text-right">{result.hintValue}</span>
+                <span className="text-slate-400">Imposter&apos;s Clue (Category)</span>
+                <span className="font-semibold text-white text-right">{result.category}</span>
               </div>
               <div className="flex items-center justify-between gap-4 py-3">
                 <span className="text-slate-400">Most Voted</span>

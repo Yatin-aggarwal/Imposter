@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, Users, Sparkles, Vote, Trophy, RotateCcw } from 'lucide-react';
-import type { ImposterHintMode, WordBankStats, WordPack } from '../types/game';
+import type { WordBankStats, WordPack } from '../types/game';
 import { getSavedPlayerName, getSavedRoomCode } from '../hooks/useGameSocket';
 import type { PersistedHostSnapshot } from '../services/localStore';
 
@@ -10,7 +10,7 @@ interface HomeViewProps {
   savedHostSnapshot: PersistedHostSnapshot | null;
   error: string | null;
   isConnecting: boolean;
-  onCreateRoom: (playerName: string, wordPack: WordPack, hintMode: ImposterHintMode) => void;
+  onCreateRoom: (playerName: string, wordPack: WordPack) => void;
   onResumeHostRoom: () => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onOpenModal: (tab: 'leaderboard' | 'words') => void;
@@ -31,7 +31,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [playerName, setPlayerName] = useState<string>(() => getSavedPlayerName());
   const [roomCode, setRoomCode] = useState<string>(() => initialRoomCode || getSavedRoomCode());
   const [wordPack, setWordPack] = useState<WordPack>('mixed');
-  const [hintMode, setHintMode] = useState<ImposterHintMode>('either');
   const [localError, setLocalError] = useState<string | null>(null);
 
   const displayError = localError || error;
@@ -56,7 +55,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       return;
     }
 
-    onCreateRoom(trimmedName, wordPack, hintMode);
+    onCreateRoom(trimmedName, wordPack);
   };
 
   return (
@@ -72,9 +71,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
               Spot the imposter before they blend in.
             </h1>
             <p className="text-base text-slate-300 max-w-xl leading-relaxed">
-              Everyone joins from their own phone. Civilians see the secret Indian or world-famous word. One random
-              imposter gets either a similar word or the category—never both. Talk it out in person, vote from your
-              phone, and climb the leaderboard.
+              Everyone joins from their own phone. Civilians see the secret Indian, global, or funny everyday word. The
+              random imposter only gets the category. Talk it out in person, vote anytime, and climb the leaderboard.
             </p>
           </div>
 
@@ -169,57 +167,29 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   />
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div>
-                    <span className="block text-sm font-medium text-slate-200 mb-2">Word Pack</span>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(
-                        [
-                          { id: 'mixed', label: 'Desi + Global' },
-                          { id: 'indian', label: 'Indian Only' },
-                          { id: 'global', label: 'Global Famous' },
-                        ] as const
-                      ).map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setWordPack(opt.id)}
-                          className={`min-h-[44px] px-3 rounded-xl border text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                            wordPack === opt.id
-                              ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                              : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="block text-sm font-medium text-slate-200 mb-2">Imposter Clue (Strictly One)</span>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(
-                        [
-                          { id: 'either', label: 'Either (Random)' },
-                          { id: 'similar_word', label: 'Similar Word' },
-                          { id: 'category', label: 'Category Only' },
-                        ] as const
-                      ).map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => setHintMode(opt.id)}
-                          className={`min-h-[44px] px-2.5 rounded-xl border text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                            hintMode === opt.id
-                              ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                              : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
+                <div>
+                  <span className="block text-sm font-medium text-slate-200 mb-2">Word Pack</span>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        { id: 'mixed', label: 'Desi + Global' },
+                        { id: 'indian', label: 'Indian Only' },
+                        { id: 'global', label: 'Global & Funny' },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setWordPack(opt.id)}
+                        className={`min-h-[44px] px-3 rounded-xl border text-xs sm:text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                          wordPack === opt.id
+                            ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                            : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -279,9 +249,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <div className="py-3.5 flex items-start gap-3.5">
                 <Sparkles className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                 <div>
-                  <div className="font-semibold text-white">02. Random Starter &amp; Secret Clue</div>
+                  <div className="font-semibold text-white">02. Random Starter &amp; Category Clue</div>
                   <p className="text-slate-400 mt-0.5 leading-relaxed">
-                    One player is picked at random to speak first. The imposter gets either a similar word or the category.
+                    One player is picked at random to speak first. Civilians see the word; the imposter only sees its category.
                   </p>
                 </div>
               </div>

@@ -65,13 +65,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const packLabels: Record<RoomSettings['wordPack'], string> = {
     mixed: 'Desi + Global',
     indian: 'Indian Only',
-    global: 'Global Famous',
-  };
-
-  const hintLabels: Record<RoomSettings['hintMode'], string> = {
-    either: 'Either (Random)',
-    similar_word: 'Similar Word',
-    category: 'Category Only',
+    global: 'Global & Funny',
   };
 
   const rankedPlayers = [...room.players].sort((a, b) => {
@@ -180,26 +174,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 </div>
               </div>
 
-              <div>
-                <span className="block text-xs font-medium text-slate-400 mb-2">
-                  Imposter Clue (Strictly One of Two)
-                </span>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['either', 'similar_word', 'category'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => onUpdateSettings({ hintMode: mode })}
-                      className={`min-h-[44px] px-2.5 rounded-xl border text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-                        room.settings.hintMode === mode
-                          ? 'border-amber-500 bg-amber-500/15 text-amber-300'
-                          : 'border-white/10 bg-[#0E121A] text-slate-300 hover:border-white/20'
-                      }`}
-                    >
-                      {hintLabels[mode]}
-                    </button>
-                  ))}
-                </div>
+              <div className="rounded-xl bg-[#0E121A] border border-white/[0.06] px-3.5 py-2.5 text-xs text-slate-300">
+                Imposter Clue: <span className="font-semibold text-amber-300">Category Only</span>
               </div>
 
               <div>

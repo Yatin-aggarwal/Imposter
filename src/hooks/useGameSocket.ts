@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ClientMessage,
   GlobalLeaderboardEntry,
-  ImposterHintMode,
   PublicRoomState,
   RoomSettings,
   SecretPlayerAssignment,
@@ -77,7 +76,7 @@ export function useGameSocket() {
   );
 
   const createHostRoom = useCallback(
-    (playerName: string, wordPack: WordPack, hintMode: ImposterHintMode) => {
+    (playerName: string, wordPack: WordPack) => {
       const trimmedName = playerName.trim();
       if (!trimmedName) return;
 
@@ -91,7 +90,6 @@ export function useGameSocket() {
           hostName: trimmedName,
           settings: {
             wordPack,
-            hintMode,
             imposterCount: 1,
           },
         },

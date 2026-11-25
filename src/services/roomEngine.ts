@@ -4,7 +4,6 @@ import type {
   ClientMessage,
   GamePhase,
   GlobalLeaderboardEntry,
-  ImposterHintType,
   PlayerRoundScoreDelta,
   PublicPlayer,
   PublicRoomState,
@@ -78,8 +77,6 @@ interface ActiveRound {
   roundNumber: number;
   wordEntry: WordEntry;
   imposterIds: Set<string>;
-  hintType: ImposterHintType;
-  hintValue: string;
   startingPlayerId: string;
   startingPlayerName: string;
   votes: Map<string, string>;
@@ -136,7 +133,10 @@ export class HostRoomController {
       const snap = options.restoreSnapshot;
       this.code = snap.code;
       this.roundNumber = snap.roundNumber;
-      this.settings = { ...snap.settings };
+      this.settings = {
+        wordPack: snap.settings?.wordPack ?? 'mixed',
+        imposterCount: snap.settings?.imposterCount === 2 ? 2 : 1,
+      };
       for (const p of snap.players) {
         this.players.set(p.id, {
           id: p.id,
@@ -379,12 +379,11 @@ export class HostRoomController {
 
     const isImposter = this.activeRound.imposterIds.has(playerId);
     if (isImposter) {
-      // Strictly ONLY ONE clue (either similar_word OR category), never both and never the secret word
+      // Imposter strictly receives ONLY the word's category—never the word itself
       return {
         roundNumber: this.activeRound.roundNumber,
         role: 'imposter',
-        hintType: this.activeRound.hintType,
-        hintValue: this.activeRound.hintValue,
+        category: this.activeRound.wordEntry.category,
       };
     }
 
@@ -522,9 +521,6 @@ export class HostRoomController {
         if (msg.settings.wordPack && ['mixed', 'indian', 'global'].includes(msg.settings.wordPack)) {
           this.settings.wordPack = msg.settings.wordPack;
         }
-        if (msg.settings.hintMode && ['either', 'similar_word', 'category'].includes(msg.settings.hintMode)) {
-          this.settings.hintMode = msg.settings.hintMode;
-        }
         if (typeof msg.settings.imposterCount === 'number') {
           this.settings.imposterCount = msg.settings.imposterCount === 2 ? 2 : 1;
         }
@@ -565,12 +561,6 @@ export class HostRoomController {
         }
         const imposterIds = new Set(shuffled.slice(0, actualImposterCount).map((p) => p.id));
 
-        let hintType: ImposterHintType;
-        if (this.settings.hintMode === 'similar_word') hintType = 'similar_word';
-        else if (this.settings.hintMode === 'category') hintType = 'category';
-        else hintType = secureRandomInt(2) === 0 ? 'similar_word' : 'category';
-
-        const hintValue = hintType === 'similar_word' ? entry.similarWord : entry.category;
         const starter = connectedPlayers[secureRandomInt(connectedPlayers.length)];
 
         this.roundNumber += 1;
@@ -585,8 +575,6 @@ export class HostRoomController {
           roundNumber: this.roundNumber,
           wordEntry: entry,
           imposterIds,
-          hintType,
-          hintValue,
           startingPlayerId: starter.id,
           startingPlayerName: starter.name,
           votes: new Map(),
@@ -754,11 +742,8 @@ export class HostRoomController {
       imposterIds: imposterIdsArr,
       imposterNames,
       secretWord: round.wordEntry.word,
-      similarWord: round.wordEntry.similarWord,
       category: round.wordEntry.category,
       region: round.wordEntry.region,
-      hintType: round.hintType,
-      hintValue: round.hintValue,
       startingPlayerId: round.startingPlayerId,
       startingPlayerName: round.startingPlayerName,
       voteCounts,

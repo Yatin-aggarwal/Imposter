@@ -2,9 +2,9 @@ import type { WordBankStats, WordEntry, WordPack, WordRegion } from '../types/ga
 import { INDIAN_WORDS_PART_1 } from './wordsIndian1';
 import { INDIAN_WORDS_PART_2 } from './wordsIndian2';
 import { INDIAN_WORDS_PART_3 } from './wordsIndian3';
-import { INDIAN_WORDS_PART_4 } from './wordsIndian4';
 import { GLOBAL_WORDS_PART_1 } from './wordsGlobal1';
 import { GLOBAL_WORDS_PART_2 } from './wordsGlobal2';
+import { GLOBAL_WORDS_PART_3 } from './wordsGlobal3';
 
 /** Cryptographically uniform random integer in [0, max) using Web Crypto API */
 export function secureRandomInt(max: number): number {
@@ -26,18 +26,16 @@ function buildBank(): WordEntry[] {
   const seen = new Set<string>();
   const entries: WordEntry[] = [];
 
-  const ingest = (list: ReadonlyArray<readonly [string, string, string]>, region: WordRegion) => {
-    for (const [rawWord, rawSimilar, rawCategory] of list) {
+  const ingest = (list: ReadonlyArray<readonly [string, string]>, region: WordRegion) => {
+    for (const [rawWord, rawCategory] of list) {
       const word = rawWord.trim();
-      const similarWord = rawSimilar.trim();
       const category = rawCategory.trim();
       const key = word.toLowerCase();
-      if (!word || !similarWord || seen.has(key)) continue;
+      if (!word || !category || seen.has(key)) continue;
       seen.add(key);
       entries.push({
         id: `${region.slice(0, 3)}_${entries.length + 1}`,
         word,
-        similarWord,
         category,
         region,
       });
@@ -47,9 +45,9 @@ function buildBank(): WordEntry[] {
   ingest(INDIAN_WORDS_PART_1, 'indian');
   ingest(INDIAN_WORDS_PART_2, 'indian');
   ingest(INDIAN_WORDS_PART_3, 'indian');
-  ingest(INDIAN_WORDS_PART_4, 'indian');
   ingest(GLOBAL_WORDS_PART_1, 'global');
   ingest(GLOBAL_WORDS_PART_2, 'global');
+  ingest(GLOBAL_WORDS_PART_3, 'global');
 
   return entries;
 }
