@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import { ArrowRight, Users, Sparkles, Vote, Trophy } from 'lucide-react';
+import { ArrowRight, Users, Sparkles, Vote, Trophy, RotateCcw } from 'lucide-react';
 import type { ImposterHintMode, WordBankStats, WordPack } from '../types/game';
 import { getSavedPlayerName, getSavedRoomCode } from '../hooks/useGameSocket';
+import type { PersistedHostSnapshot } from '../services/localStore';
 
 interface HomeViewProps {
   initialRoomCode: string;
-  wordStats: WordBankStats | null;
+  wordStats: WordBankStats;
+  savedHostSnapshot: PersistedHostSnapshot | null;
   error: string | null;
   isConnecting: boolean;
-  onCreateRoom: (playerName: string, wordPack: WordPack, hintMode: ImposterHintMode) => Promise<void>;
+  onCreateRoom: (playerName: string, wordPack: WordPack, hintMode: ImposterHintMode) => void;
+  onResumeHostRoom: () => void;
   onJoinRoom: (roomCode: string, playerName: string) => void;
   onOpenModal: (tab: 'leaderboard' | 'words') => void;
 }
@@ -16,9 +19,11 @@ interface HomeViewProps {
 export const HomeView: React.FC<HomeViewProps> = ({
   initialRoomCode,
   wordStats,
+  savedHostSnapshot,
   error,
   isConnecting,
   onCreateRoom,
+  onResumeHostRoom,
   onJoinRoom,
   onOpenModal,
 }) => {
@@ -28,11 +33,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [wordPack, setWordPack] = useState<WordPack>('mixed');
   const [hintMode, setHintMode] = useState<ImposterHintMode>('either');
   const [localError, setLocalError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
   const displayError = localError || error;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
 
@@ -52,12 +56,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       return;
     }
 
-    setSubmitting(true);
-    try {
-      await onCreateRoom(trimmedName, wordPack, hintMode);
-    } finally {
-      setSubmitting(false);
-    }
+    onCreateRoom(trimmedName, wordPack, hintMode);
   };
 
   return (
@@ -67,7 +66,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         <div className="lg:col-span-7 space-y-6">
           <div className="space-y-3">
             <p className="text-xs font-medium text-amber-400">
-              In-Person Party Game · {wordStats ? `${wordStats.total.toLocaleString()} Curated Words` : '1,240+ Curated Words'} · iOS &amp; Android
+              In-Person Party Game · {wordStats.total.toLocaleString()} Curated Words · iOS &amp; Android
             </p>
             <h1 className="font-display text-3xl sm:text-5xl font-bold tracking-tight text-white leading-[1.1]">
               Spot the imposter before they blend in.
@@ -78,6 +77,27 @@ export const HomeView: React.FC<HomeViewProps> = ({
               phone, and climb the leaderboard.
             </p>
           </div>
+
+          {/* Resume Saved Host Room Banner (if Host refreshed browser) */}
+          {savedHostSnapshot && !initialRoomCode && (
+            <div className="rounded-2xl bg-[#151B26] border border-amber-500/30 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium text-amber-400">Saved Room in Local Storage</div>
+                <div className="text-sm font-semibold text-white mt-0.5">
+                  Room <span className="font-mono text-amber-300">{savedHostSnapshot.code}</span> ·{' '}
+                  {savedHostSnapshot.players.length} players · Round {savedHostSnapshot.roundNumber}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onResumeHostRoom}
+                className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-xl bg-amber-500/15 border border-amber-500/40 text-xs font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Resume Room</span>
+              </button>
+            </div>
+          )}
 
           {/* Primary Play Card */}
           <section className="rounded-2xl bg-[#151B26] border border-white/[0.08] p-5 sm:p-7">
@@ -212,11 +232,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
               <button
                 type="submit"
-                disabled={submitting || isConnecting}
+                disabled={isConnecting}
                 className="w-full min-h-[50px] inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-6 text-base font-semibold text-slate-950 hover:bg-amber-400 active:scale-[0.99] disabled:opacity-60 transition-[background-color,transform] duration-150 cursor-pointer"
               >
                 <span>
-                  {submitting || isConnecting
+                  {isConnecting
                     ? 'Connecting...'
                     : mode === 'create'
                       ? 'Create Party Room'
@@ -279,7 +299,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <div>
                   <div className="font-semibold text-white">04. Play Again in Same Room</div>
                   <p className="text-slate-400 mt-0.5 leading-relaxed">
-                    Keep your squad in the exact same room across rounds while the live leaderboard tracks winners.
+                    Scores &amp; played words stay saved in local storage across rounds and game nights.
                   </p>
                 </div>
               </div>
@@ -304,19 +324,19 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-white/[0.06]">
               <div>
                 <div className="font-mono tabular-nums text-2xl font-bold text-white">
-                  {wordStats ? wordStats.total.toLocaleString() : '1,240'}
+                  {wordStats.total.toLocaleString()}
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">Total Words</div>
               </div>
               <div>
                 <div className="font-mono tabular-nums text-2xl font-bold text-amber-400">
-                  {wordStats ? wordStats.indian.toLocaleString() : '780'}
+                  {wordStats.indian.toLocaleString()}
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">Indian Refs</div>
               </div>
               <div>
                 <div className="font-mono tabular-nums text-2xl font-bold text-slate-200">
-                  {wordStats ? wordStats.global.toLocaleString() : '460'}
+                  {wordStats.global.toLocaleString()}
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">World Famous</div>
               </div>

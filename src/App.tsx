@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import type { ImposterHintMode, WordBankStats, WordPack } from './types/game';
+import { WORD_BANK_STATS } from './data/wordBank';
 import { useGameSocket } from './hooks/useGameSocket';
 import { HomeView } from './components/HomeView';
 import { LobbyView } from './components/LobbyView';
@@ -17,8 +17,13 @@ export default function App() {
     secret,
     connectionStatus,
     error,
+    leaderboard,
+    savedHostSnapshot,
+    createHostRoom,
+    resumeHostRoom,
     connectAndJoin,
     leaveRoom,
+    refreshLeaderboard,
     updateSettings,
     startRound,
     setReadyToVote,
@@ -29,23 +34,13 @@ export default function App() {
     kickPlayer,
   } = useGameSocket();
 
-  const [wordStats, setWordStats] = useState<WordBankStats | null>(null);
   const [modalTab, setModalTab] = useState<'leaderboard' | 'words' | null>(null);
   const [initialRoomCode] = useState<string>(() => {
     const params = new URLSearchParams(window.location.search);
     return (params.get('room') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
   });
 
-  useEffect(() => {
-    fetch('/api/words/stats')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: WordBankStats | null) => {
-        if (data) setWordStats(data);
-      })
-      .catch(() => {});
-  }, []);
-
-  // Keep URL query param synced with active room so users can share browser URL directly too
+  // Keep URL query param synced with active room so users can share browser URL directly
   useEffect(() => {
     const url = new URL(window.location.href);
     if (roomState?.code) {
@@ -57,32 +52,15 @@ export default function App() {
     }
   }, [roomState?.code, initialRoomCode]);
 
-  const handleCreateRoom = async (playerName: string, wordPack: WordPack, hintMode: ImposterHintMode) => {
-    const res = await fetch('/api/rooms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wordPack, hintMode }),
-    });
-    if (!res.ok) {
-      throw new Error('Could not create room');
-    }
-    const data = (await res.json()) as { code: string };
-    connectAndJoin(data.code, playerName);
-  };
-
   return (
     <div className="min-h-screen bg-[#0E121A] text-[#F1F5F9] flex flex-col">
-      {/* Compact 3-Zone Top Bar (56px height, well under 15% mobile sticky cap) */}
+      {/* Compact 3-Zone Top Bar */}
       <header className="sticky top-0 z-40 h-14 border-b border-white/[0.08] bg-[#0E121A]/90 backdrop-blur-md">
         <div className="mx-auto h-full w-full max-w-6xl px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-6">
           {/* Zone 1: Single-line Brand Wordmark */}
           <button
             type="button"
-            onClick={() => {
-              if (roomState) {
-                setModalTab(null);
-              }
-            }}
+            onClick={() => setModalTab(null)}
             className="font-display text-xl font-bold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer"
           >
             Khabri
@@ -92,7 +70,10 @@ export default function App() {
           <nav className="flex items-center gap-5 sm:gap-7 text-sm font-medium text-slate-300">
             <button
               type="button"
-              onClick={() => setModalTab('leaderboard')}
+              onClick={() => {
+                refreshLeaderboard();
+                setModalTab('leaderboard');
+              }}
               className="hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               Leaderboard
@@ -119,11 +100,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* Reconnection Banner (strictly shown only during active WebSocket reconnect) */}
+      {/* Reconnection Banner */}
       {connectionStatus === 'reconnecting' && (
         <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 text-center text-xs font-medium text-amber-300 flex items-center justify-center gap-2">
           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-          <span>Reconnecting to room...</span>
+          <span>Reconnecting to host room...</span>
         </div>
       )}
 
@@ -132,12 +113,17 @@ export default function App() {
         {!roomState ? (
           <HomeView
             initialRoomCode={initialRoomCode}
-            wordStats={wordStats}
+            wordStats={WORD_BANK_STATS}
+            savedHostSnapshot={savedHostSnapshot}
             error={error}
             isConnecting={connectionStatus === 'connecting'}
-            onCreateRoom={handleCreateRoom}
+            onCreateRoom={createHostRoom}
+            onResumeHostRoom={resumeHostRoom}
             onJoinRoom={connectAndJoin}
-            onOpenModal={(tab) => setModalTab(tab)}
+            onOpenModal={(tab) => {
+              if (tab === 'leaderboard') refreshLeaderboard();
+              setModalTab(tab);
+            }}
           />
         ) : roomState.phase === 'LOBBY' ? (
           <LobbyView
@@ -179,8 +165,10 @@ export default function App() {
       {modalTab && (
         <LeaderboardModal
           initialTab={modalTab}
+          entries={leaderboard}
+          onRefreshLeaderboard={refreshLeaderboard}
           onClose={() => setModalTab(null)}
-          wordStats={wordStats}
+          wordStats={WORD_BANK_STATS}
         />
       )}
       <OfflineIndicator />

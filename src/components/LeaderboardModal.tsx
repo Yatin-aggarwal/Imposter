@@ -1,41 +1,39 @@
-import React, { useEffect, useState } from 'react';
-import { Trophy, BookOpen, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Trophy, BookOpen, X, RotateCcw } from 'lucide-react';
 import type { GlobalLeaderboardEntry, WordBankStats } from '../types/game';
+import { clearGlobalLeaderboard, clearUsedWordIds, loadUsedWordIds } from '../services/localStore';
 
 interface LeaderboardModalProps {
   initialTab: 'leaderboard' | 'words';
+  entries: GlobalLeaderboardEntry[];
+  onRefreshLeaderboard: () => void;
   onClose: () => void;
-  wordStats: WordBankStats | null;
+  wordStats: WordBankStats;
 }
 
-export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ initialTab, onClose, wordStats }) => {
+export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
+  initialTab,
+  entries,
+  onRefreshLeaderboard,
+  onClose,
+  wordStats,
+}) => {
   const [tab, setTab] = useState<'leaderboard' | 'words'>(initialTab);
-  const [entries, setEntries] = useState<GlobalLeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [usedCount, setUsedCount] = useState<number>(() => loadUsedWordIds().size);
+  const [confirmResetScores, setConfirmResetScores] = useState(false);
+  const [confirmResetWords, setConfirmResetWords] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    fetch('/api/leaderboard')
-      .then((res) => {
-        if (!res.ok) throw new Error('Unable to load leaderboard');
-        return res.json();
-      })
-      .then((data: { leaderboard?: GlobalLeaderboardEntry[] }) => {
-        if (!active) return;
-        setEntries(Array.isArray(data.leaderboard) ? data.leaderboard : []);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (!active) return;
-        setError('Could not load leaderboard right now.');
-        setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const handleResetScores = () => {
+    clearGlobalLeaderboard();
+    onRefreshLeaderboard();
+    setConfirmResetScores(false);
+  };
+
+  const handleResetWords = () => {
+    clearUsedWordIds();
+    setUsedCount(0);
+    setConfirmResetWords(false);
+  };
 
   return (
     <div
@@ -84,22 +82,52 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ initialTab, 
         <div className="flex-1 overflow-y-auto px-5 py-5">
           {tab === 'leaderboard' ? (
             <div>
-              <div className="mb-4">
-                <h3 className="font-display text-lg font-bold text-white">All-Time Standings</h3>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  Cumulative scores recorded across completed rounds on this server.
-                </p>
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="font-display text-lg font-bold text-white">All-Time Standings</h3>
+                  <p className="text-sm text-slate-400 mt-0.5">
+                    Saved in your browser local storage and synced with players after every round.
+                  </p>
+                </div>
+
+                {entries.length > 0 && (
+                  <div className="shrink-0">
+                    {confirmResetScores ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleResetScores}
+                          className="min-h-[36px] px-3 rounded-lg bg-rose-500 text-white text-xs font-semibold hover:bg-rose-400 whitespace-nowrap cursor-pointer"
+                        >
+                          Confirm Reset
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmResetScores(false)}
+                          className="min-h-[36px] px-2.5 rounded-lg text-xs text-slate-400 hover:text-white cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmResetScores(true)}
+                        className="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg border border-white/10 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/[0.05] whitespace-nowrap cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {loading ? (
-                <div className="py-12 text-center text-sm text-slate-400">Loading standings...</div>
-              ) : error ? (
-                <div className="py-10 text-center text-sm text-rose-400">{error}</div>
-              ) : entries.length === 0 ? (
+              {entries.length === 0 ? (
                 <div className="py-12 text-center">
                   <p className="text-base font-medium text-slate-200">No rounds recorded yet</p>
                   <p className="text-sm text-slate-400 mt-1">
-                    Finish your first round in any room and scores will appear here automatically.
+                    Finish your first round in any room and scores will be saved right here in local storage.
                   </p>
                 </div>
               ) : (
@@ -113,7 +141,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ initialTab, 
                   {entries.map((entry, idx) => (
                     <div key={`${entry.name}-${idx}`} className="grid grid-cols-12 items-center py-3 text-sm">
                       <div className="col-span-2 font-mono tabular-nums font-semibold text-slate-300">
-                        {idx === 0 ? '#1' : idx === 1 ? '#2' : idx === 2 ? '#3' : `#${idx + 1}`}
+                        #{idx + 1}
                       </div>
                       <div className="col-span-5 pr-2">
                         <div className="font-semibold text-white truncate">{entry.name}</div>
@@ -135,54 +163,84 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ initialTab, 
           ) : (
             <div>
               <div className="mb-5">
-                <h3 className="font-display text-lg font-bold text-white">Curated Word Vault</h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  Every single word has both a matched Similar Word and a Category, tracked per room with zero repeats.
-                </p>
-                {wordStats && (
-                  <div className="mt-4 grid grid-cols-3 gap-4 border-y border-white/[0.08] py-3.5">
-                    <div>
-                      <div className="text-xs text-slate-400">Total Words</div>
-                      <div className="font-mono tabular-nums text-2xl font-bold text-white mt-0.5">
-                        {wordStats.total.toLocaleString()}
-                      </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-white">Curated Word Vault</h3>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Played words are remembered in local storage so your group never repeats words across months.
+                    </p>
+                  </div>
+                  {usedCount > 0 && (
+                    <div className="shrink-0">
+                      {confirmResetWords ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleResetWords}
+                            className="min-h-[36px] px-3 rounded-lg bg-amber-500 text-slate-950 text-xs font-semibold hover:bg-amber-400 whitespace-nowrap cursor-pointer"
+                          >
+                            Reset History
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmResetWords(false)}
+                            className="min-h-[36px] px-2.5 rounded-lg text-xs text-slate-400 hover:text-white cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmResetWords(true)}
+                          className="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg border border-white/10 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/[0.05] whitespace-nowrap cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset ({usedCount})</span>
+                        </button>
+                      )}
                     </div>
-                    <div>
-                      <div className="text-xs text-slate-400">Indian &amp; Desi</div>
-                      <div className="font-mono tabular-nums text-2xl font-bold text-amber-400 mt-0.5">
-                        {wordStats.indian.toLocaleString()}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-400">Global Famous</div>
-                      <div className="font-mono tabular-nums text-2xl font-bold text-slate-200 mt-0.5">
-                        {wordStats.global.toLocaleString()}
-                      </div>
+                  )}
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-4 border-y border-white/[0.08] py-3.5">
+                  <div>
+                    <div className="text-xs text-slate-400">Unseen Remaining</div>
+                    <div className="font-mono tabular-nums text-2xl font-bold text-white mt-0.5">
+                      {Math.max(0, wordStats.total - usedCount).toLocaleString()}
                     </div>
                   </div>
-                )}
+                  <div>
+                    <div className="text-xs text-slate-400">Indian &amp; Desi</div>
+                    <div className="font-mono tabular-nums text-2xl font-bold text-amber-400 mt-0.5">
+                      {wordStats.indian.toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400">Global Famous</div>
+                    <div className="font-mono tabular-nums text-2xl font-bold text-slate-200 mt-0.5">
+                      {wordStats.global.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {wordStats ? (
-                <div className="divide-y divide-white/[0.06]">
-                  {wordStats.categories.map((cat) => (
-                    <div key={cat.name} className="flex items-center justify-between py-2.5 text-sm">
-                      <div>
-                        <span className="font-medium text-slate-100">{cat.name}</span>
-                        <span className="text-slate-500 mx-2" aria-hidden="true">·</span>
-                        <span className="text-xs text-slate-400">
-                          {cat.region === 'indian' ? 'Indian' : 'Global'}
-                        </span>
-                      </div>
-                      <span className="font-mono tabular-nums text-xs font-semibold text-slate-300">
-                        {cat.count} words
+              <div className="divide-y divide-white/[0.06]">
+                {wordStats.categories.map((cat) => (
+                  <div key={cat.name} className="flex items-center justify-between py-2.5 text-sm">
+                    <div>
+                      <span className="font-medium text-slate-100">{cat.name}</span>
+                      <span className="text-slate-500 mx-2" aria-hidden="true">·</span>
+                      <span className="text-xs text-slate-400">
+                        {cat.region === 'indian' ? 'Indian' : 'Global'}
                       </span>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center text-sm text-slate-400">Loading word vault stats...</div>
-              )}
+                    <span className="font-mono tabular-nums text-xs font-semibold text-slate-300">
+                      {cat.count} words
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

@@ -1,10 +1,25 @@
-import crypto from 'node:crypto';
-import type { WordBankStats, WordEntry, WordPack, WordRegion } from '../types/game.ts';
-import { INDIAN_WORDS_PART_1 } from './wordsIndian1.ts';
-import { INDIAN_WORDS_PART_2 } from './wordsIndian2.ts';
-import { INDIAN_WORDS_PART_3 } from './wordsIndian3.ts';
-import { GLOBAL_WORDS_PART_1 } from './wordsGlobal1.ts';
-import { GLOBAL_WORDS_PART_2 } from './wordsGlobal2.ts';
+import type { WordBankStats, WordEntry, WordPack, WordRegion } from '../types/game';
+import { INDIAN_WORDS_PART_1 } from './wordsIndian1';
+import { INDIAN_WORDS_PART_2 } from './wordsIndian2';
+import { INDIAN_WORDS_PART_3 } from './wordsIndian3';
+import { GLOBAL_WORDS_PART_1 } from './wordsGlobal1';
+import { GLOBAL_WORDS_PART_2 } from './wordsGlobal2';
+
+/** Cryptographically uniform random integer in [0, max) using Web Crypto API */
+export function secureRandomInt(max: number): number {
+  if (max <= 1) return 0;
+  if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.getRandomValues === 'function') {
+    const arr = new Uint32Array(1);
+    const limit = Math.floor(0x100000000 / max) * max;
+    let val = 0;
+    do {
+      window.crypto.getRandomValues(arr);
+      val = arr[0];
+    } while (val >= limit);
+    return val % max;
+  }
+  return Math.floor(Math.random() * max);
+}
 
 function buildBank(): WordEntry[] {
   const seen = new Set<string>();
@@ -76,12 +91,10 @@ export function pickRandomWord(pack: WordPack, usedIds: Set<string>): { entry: W
   let wrappedAround = false;
 
   if (candidates.length === 0) {
-    // Only wraps around after exhausting the entire pool (hundreds/1200+ rounds!)
     wrappedAround = true;
     candidates = pool;
   }
 
-  // In mixed mode, slightly weight toward Indian (~63% natural ratio since ~780 Indian vs ~460 Global)
-  const idx = crypto.randomInt(0, candidates.length);
+  const idx = secureRandomInt(candidates.length);
   return { entry: candidates[idx], wrappedAround };
 }
