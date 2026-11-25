@@ -1,0 +1,6 @@
+{
+  "name": "Khabri — Desi & Global Imposter",
+  "description": "Live multiplayer social deduction party game featuring 1,200+ Indian and world-famous words, random imposter hints, mobile phone voting, and persistent leaderboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
